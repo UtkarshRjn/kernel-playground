@@ -7,7 +7,7 @@ on:
 
 jobs:
   web:
-    name: Web & shared (TypeScript)
+    name: Web, shared & core (TypeScript)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,6 +21,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r build
       - run: pnpm -r typecheck
+      - run: pnpm -r test
 
   execution:
     name: Execution backend (Python)

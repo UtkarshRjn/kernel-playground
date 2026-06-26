@@ -7,6 +7,8 @@ the GPU mapping and the function shape so the rest of the system can be built ag
 
 from __future__ import annotations
 
+from typing import Any
+
 from .contracts import GpuType
 
 # Map our canonical GpuType to Modal's GPU request strings.
@@ -22,11 +24,11 @@ MODAL_GPU: dict[GpuType, str] = {
 }
 
 try:
-    import modal  # type: ignore[import-not-found]
+    import modal
 
     _MODAL_AVAILABLE = True
 except ImportError:  # pragma: no cover - modal absent in CI
-    modal = None  # type: ignore[assignment]
+    modal = None
     _MODAL_AVAILABLE = False
 
 
@@ -35,7 +37,7 @@ def is_available() -> bool:
     return _MODAL_AVAILABLE
 
 
-def build_app():  # pragma: no cover - exercised only where modal is installed
+def build_app() -> tuple[Any, Any]:  # pragma: no cover - exercised where modal is installed
     """Construct the Modal app + GPU image. Real run logic arrives in Phase 1."""
     if not _MODAL_AVAILABLE:
         raise RuntimeError("modal is not installed; install with extras: pip install '.[modal]'")

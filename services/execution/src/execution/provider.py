@@ -50,11 +50,12 @@ class MockProvider(ExecutionProvider):
     def run(self, request: RunRequest) -> RunResult:
         base = self._SPEED.get(request.gpu.value, 1.0)
         # Deterministic, slightly varying samples without RNG.
-        def measure_ms() -> float:
-            measure_ms.i += 1  # type: ignore[attr-defined]
-            return base * (1.0 + 0.01 * (measure_ms.i % 5))  # type: ignore[attr-defined]
+        counter = {"i": 0}
 
-        measure_ms.i = 0  # type: ignore[attr-defined]
+        def measure_ms() -> float:
+            counter["i"] += 1
+            return base * (1.0 + 0.01 * (counter["i"] % 5))
+
         stats = run_benchmark(measure_ms, request.benchmark)
         gpu_seconds = (stats.mean_ms / 1000.0) * request.benchmark.timed_iters
         return RunResult(

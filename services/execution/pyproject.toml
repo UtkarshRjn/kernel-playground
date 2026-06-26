@@ -31,6 +31,11 @@ python_version = "3.11"
 strict = true
 files = ["src"]
 
+# `modal` installs only in the GPU image; it's import-guarded everywhere else.
+[[tool.mypy.overrides]]
+module = ["modal", "modal.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
