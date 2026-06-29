@@ -86,7 +86,10 @@ export async function orchestrateRun(
       totalCostUsd += costUsd(result.gpu, result.gpuSeconds);
       captured += captureCredits(result.gpu, result.gpuSeconds);
     } else {
-      // Infra failure: no usage to charge; surface a runtime_error target.
+      // Infra/service failure (network, 5xx, billing limit): no usage to charge.
+      // Surface the real reason so the console can explain it.
+      const reason =
+        outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
       targets.push({
         runId: submission.runId,
         targetId: req.targetId,
@@ -96,8 +99,8 @@ export async function orchestrateRun(
         stats: null,
         metrics: null,
         stdout: "",
-        stderr: String(outcome.reason),
-        diagnostics: "provider error",
+        stderr: reason,
+        diagnostics: `Execution service error — ${reason}`,
       });
     }
   });

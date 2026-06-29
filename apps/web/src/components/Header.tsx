@@ -1,6 +1,7 @@
 import { Github } from "lucide-react";
 import type { ReactNode } from "react";
 import { Logo } from "./Logo";
+import { ThemeToggle } from "./theme";
 
 export function Header({ right }: { right?: ReactNode }) {
   return (
@@ -22,6 +23,7 @@ export function Header({ right }: { right?: ReactNode }) {
           >
             <Github size={15} /> GitHub
           </a>
+          <ThemeToggle />
           {right}
         </nav>
       </div>

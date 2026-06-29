@@ -36,7 +36,7 @@ export function GpuSelector({
   onPreset: (gpus: GpuType[]) => void;
 }) {
   return (
-    <div className="panel">
+    <div className="panel gpu-panel">
       <div className="panel-head">
         <span className="label">Target GPUs</span>
         <div className="presets">
@@ -48,7 +48,8 @@ export function GpuSelector({
         </div>
       </div>
 
-      {groupByArch().map(({ arch, gpus }) => (
+      <div className="gpu-scroll">
+        {groupByArch().map(({ arch, gpus }) => (
         <div className="arch-group" key={arch}>
           <div className="arch-label">{arch}</div>
           <div className="gpu-list">
@@ -87,7 +88,8 @@ export function GpuSelector({
             })}
           </div>
         </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
