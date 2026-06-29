@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
@@ -25,6 +26,7 @@ export default function RootLayout({
       <body>
         <div className="bg-glow" aria-hidden />
         {children}
+        <Toaster theme="light" position="bottom-right" richColors closeButton />
       </body>
     </html>
   );
