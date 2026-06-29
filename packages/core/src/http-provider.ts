@@ -15,8 +15,8 @@ export class HttpModalProvider implements ExecutionProvider {
     private readonly token: string,
   ) {}
 
-  async run(request: RunRequest): Promise<RunResult> {
-    const url = `${this.baseUrl.replace(/\/$/, "")}/bench`;
+  private async post(path: string, request: RunRequest): Promise<RunResult> {
+    const url = `${this.baseUrl.replace(/\/$/, "")}${path}`;
     const res = await fetch(url, {
       method: "POST",
       headers: {
@@ -30,6 +30,14 @@ export class HttpModalProvider implements ExecutionProvider {
       throw new Error(`execution endpoint ${res.status}: ${detail}`);
     }
     return (await res.json()) as RunResult;
+  }
+
+  async run(request: RunRequest): Promise<RunResult> {
+    return this.post("/bench", request);
+  }
+
+  async compileCheck(request: RunRequest): Promise<RunResult> {
+    return this.post("/test", request);
   }
 
   async cancel(): Promise<void> {

@@ -6,8 +6,9 @@ from execution.contracts import (
     KernelFile,
     KernelLanguage,
     RunRequest,
+    RunStatus,
 )
-from execution.triton_runner import _entry_source, load_entry
+from execution.triton_runner import _entry_source, load_entry, syntax_check
 
 
 def test_load_entry_finds_kp_run() -> None:
@@ -51,3 +52,20 @@ def test_entry_source_prefers_kernel_py() -> None:
 def test_entry_source_requires_python_file() -> None:
     with pytest.raises(ValueError):
         _entry_source(_req([KernelFile("kernel.cu", "// not python")]))
+
+
+def test_syntax_check_passes_valid_source() -> None:
+    res = syntax_check(_req([KernelFile("kernel.py", "def kp_run():\n    pass\n")]))
+    assert res.status is RunStatus.SUCCEEDED
+
+
+def test_syntax_check_flags_syntax_error() -> None:
+    res = syntax_check(_req([KernelFile("kernel.py", "def kp_run(:\n  pass\n")]))
+    assert res.status is RunStatus.COMPILE_ERROR
+    assert res.diagnostics
+
+
+def test_syntax_check_requires_kp_run() -> None:
+    res = syntax_check(_req([KernelFile("kernel.py", "x = 1\n")]))
+    assert res.status is RunStatus.COMPILE_ERROR
+    assert "kp_run" in (res.diagnostics or "")

@@ -52,6 +52,21 @@ export class MockExecutionProvider implements ExecutionProvider {
     };
   }
 
+  async compileCheck(request: RunRequest): Promise<RunResult> {
+    return {
+      runId: request.runId,
+      targetId: request.targetId,
+      gpu: request.gpu,
+      status: "succeeded",
+      gpuSeconds: 0,
+      stats: null,
+      metrics: null,
+      stdout: "Compiled successfully (mock).",
+      stderr: "",
+      diagnostics: null,
+    };
+  }
+
   async cancel(): Promise<void> {
     return;
   }

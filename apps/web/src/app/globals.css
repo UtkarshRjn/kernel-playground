@@ -814,15 +814,36 @@ footer.site {
 .empty {
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius);
-  padding: 48px 24px;
+  padding: 40px 24px;
   text-align: center;
-  color: var(--faint);
-  font-size: 14px;
   background: var(--surface-2);
 }
 .empty .ic {
-  color: var(--border-strong);
-  margin-bottom: 10px;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--accent);
+  background: var(--accent-soft);
+  margin-bottom: 14px;
+}
+.empty-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.empty-sub {
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.6;
+  max-width: 520px;
+  margin: 0 auto;
+}
+.empty-sub b {
+  color: var(--text);
+  font-weight: 600;
 }
 
 /* ---------- Theme toggle ---------- */
