@@ -39,6 +39,9 @@ export default function Home() {
             benchmark the same code across {gpus.length} GPUs — side by side, with
             honest measurements and per-dollar cost.
           </p>
+          <a className="cta" href="/playground">
+            Open the playground →
+          </a>
         </div>
       </section>
 
