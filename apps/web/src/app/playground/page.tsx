@@ -1,13 +1,18 @@
 "use client";
 
 import { buildComparison, type Comparison } from "@kp/core";
-import { GPU_LIST, type GpuType, type KernelLanguage } from "@kp/shared";
+import { type GpuType, type KernelLanguage } from "@kp/shared";
+import { motion } from "framer-motion";
+import { Copy, FileCode2, Inbox, RotateCcw, Zap } from "lucide-react";
+import { DollarSign } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { CountUp } from "@/components/CountUp";
+import { GpuSelector } from "@/components/GpuSelector";
 import { Header } from "@/components/Header";
 import { trpc } from "@/trpc/client";
 
-// CodeMirror touches the DOM — load it client-side only.
 const CodeEditor = dynamic(() => import("@/components/CodeEditor"), {
   ssr: false,
   loading: () => <div className="editor-loading">Loading editor…</div>,
@@ -74,7 +79,6 @@ export default function Playground() {
   const [selected, setSelected] = useState<Set<GpuType>>(new Set(DEFAULT_GPUS));
   const [running, setRunning] = useState(false);
   const [comparison, setComparison] = useState<Comparison | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [credits, setCredits] = useState<number | null>(null);
 
   useEffect(() => {
@@ -101,7 +105,6 @@ export default function Playground() {
 
   async function run() {
     setRunning(true);
-    setError(null);
     setComparison(null);
     try {
       const { id } = await trpc.kernel.create.mutate({
@@ -114,117 +117,171 @@ export default function Playground() {
       setComparison(buildComparison(report.targets));
       const c = await trpc.run.credits.query();
       setCredits(c.balance);
+      const ok = report.targets.filter((t) => t.status === "succeeded").length;
+      toast.success(`Ran on ${ok} GPU${ok === 1 ? "" : "s"} · ${report.creditsCharged} credits`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
     } finally {
       setRunning(false);
     }
   }
 
-  // Bar width is proportional to speed (fastest = 100%).
+  function reset() {
+    setCode(STARTERS[language]);
+    toast.success("Reset to starter kernel");
+  }
+  async function copy() {
+    await navigator.clipboard.writeText(code);
+    toast.success("Copied to clipboard");
+  }
+
+  const lines = code.split("\n").length;
   const fastestMedian = comparison
     ? Math.min(
-        ...comparison.rows
-          .map((r) => r.medianMs)
-          .filter((m): m is number => m !== null),
+        ...comparison.rows.map((r) => r.medianMs).filter((m): m is number => m !== null),
         Infinity,
       )
     : Infinity;
+  const fastestRow = comparison?.rows.find((r) => r.gpu === comparison.fastestGpu);
+  const valueRow = comparison?.rows.find((r) => r.gpu === comparison.bestValueGpu);
 
   return (
     <>
-      <Header right={<span className="chip">{credits === null ? "…" : `${credits} credits`}</span>} />
+      <Header
+        right={<span className="chip">{credits === null ? "…" : `${credits} credits`}</span>}
+      />
 
       <main className="container pg-wrap">
         <div className="pg-top">
-          <div>
-            <h1>Playground</h1>
-            <p>Write a kernel, pick your GPUs, and compare on real hardware.</p>
-          </div>
+          <h1>Playground</h1>
+          <p>Write a kernel, pick your GPUs, and compare on real hardware.</p>
         </div>
 
         <div className="pg-layout">
           <div className="editor-panel">
-            <div className="editor-bar">
-              <div className="seg">
+            <div className="editor-tabs">
+              <div style={{ display: "flex", gap: 6 }}>
                 {(["cuda", "triton"] as const).map((lang) => (
                   <button
                     key={lang}
-                    className={language === lang ? "active" : ""}
+                    className={`tab${language === lang ? " active" : ""}`}
                     onClick={() => switchLanguage(lang)}
                   >
-                    {lang === "cuda" ? "CUDA" : "Triton"}
+                    <FileCode2 size={14} />
+                    kernel<span className="fext">.{lang === "cuda" ? "cu" : "py"}</span>
                   </button>
                 ))}
               </div>
-              <span className="fname">{language === "cuda" ? "kernel.cu" : "kernel.py"}</span>
+              <div className="editor-tools">
+                <button className="icon-btn" title="Copy" onClick={copy}>
+                  <Copy size={15} />
+                </button>
+                <button className="icon-btn" title="Reset to starter" onClick={reset}>
+                  <RotateCcw size={15} />
+                </button>
+              </div>
             </div>
             <CodeEditor value={code} language={language} onChange={setCode} />
+            <div className="editor-status">
+              <span>{language === "cuda" ? "CUDA C++" : "Triton · Python"}</span>
+              <span>{lines} lines</span>
+              <span className={running ? "" : "ok"} style={{ marginLeft: "auto" }}>
+                {running ? "Running…" : "● Ready"}
+              </span>
+            </div>
           </div>
 
           <div className="side">
-            <div className="panel">
-              <div className="label">Target GPUs</div>
-              <div className="gpu-grid">
-                {GPU_LIST.map((spec) => {
-                  const on = selected.has(spec.type);
-                  return (
-                    <div
-                      key={spec.type}
-                      className={`gpu${on ? " on" : ""}`}
-                      onClick={() => toggle(spec.type)}
-                    >
-                      <span className="tick">{on ? "✓" : ""}</span>
-                      <span className="name">{spec.label}</span>
-                      <span className="price">${(spec.pricePerSec * 3600).toFixed(2)}/hr</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="run-row">
-              <button
-                className="btn btn-primary"
-                disabled={running || selected.size === 0}
-                onClick={run}
-              >
-                {running ? (
-                  <>
-                    <span className="spinner" /> Running…
-                  </>
-                ) : (
-                  `Run on ${selected.size} GPU${selected.size === 1 ? "" : "s"}`
-                )}
-              </button>
-            </div>
-
-            {error && <div className="error-box">{error}</div>}
+            <GpuSelector
+              selected={selected}
+              onToggle={toggle}
+              onPreset={(gpus) => setSelected(new Set(gpus))}
+            />
+            <button
+              className="btn btn-primary btn-lg run-btn"
+              disabled={running || selected.size === 0}
+              onClick={run}
+            >
+              {running ? (
+                <>
+                  <span className="spinner" /> Running…
+                </>
+              ) : (
+                <>
+                  <Zap size={16} /> Run on {selected.size} GPU{selected.size === 1 ? "" : "s"}
+                </>
+              )}
+            </button>
           </div>
         </div>
 
         <section className="results">
-          {!comparison && !error && (
+          {running && (
+            <div className="bars">
+              {[...selected].map((g) => (
+                <div className="barrow" key={g}>
+                  <span className="glabel">{g}</span>
+                  <div className="skrow" />
+                  <span className="btime">…</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!running && !comparison && (
             <div className="empty">
+              <div className="ic">
+                <Inbox size={28} />
+              </div>
               Pick your GPUs and hit run — results, speedup bars and perf-per-dollar appear here.
             </div>
           )}
 
-          {comparison && (
+          {!running && comparison && (
             <>
               <div className="winners">
-                <div className="winner fast">
-                  <div className="k">⚡ Fastest</div>
-                  <div className="v">{comparison.fastestGpu ?? "—"}</div>
-                </div>
-                <div className="winner value">
-                  <div className="k">💰 Best value</div>
-                  <div className="v">{comparison.bestValueGpu ?? "—"}</div>
-                </div>
+                <motion.div
+                  className="winner fast"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <div className="wic">
+                    <Zap size={20} />
+                  </div>
+                  <div>
+                    <div className="k">Fastest</div>
+                    <div className="v">{comparison.fastestGpu ?? "—"}</div>
+                    {fastestRow?.medianMs != null && (
+                      <div className="sub">
+                        <CountUp value={fastestRow.medianMs} decimals={4} suffix=" ms" />
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+                <motion.div
+                  className="winner value"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: 0.05 }}
+                >
+                  <div className="wic">
+                    <DollarSign size={20} />
+                  </div>
+                  <div>
+                    <div className="k">Best value</div>
+                    <div className="v">{comparison.bestValueGpu ?? "—"}</div>
+                    {valueRow?.speedPerDollar != null && (
+                      <div className="sub">
+                        <CountUp value={Math.round(valueRow.speedPerDollar)} /> perf/$
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
               </div>
 
               <div className="bars">
-                {comparison.rows.map((r) => {
+                {comparison.rows.map((r, i) => {
                   const width =
                     r.medianMs !== null && fastestMedian !== Infinity
                       ? (fastestMedian / r.medianMs) * 100
@@ -233,13 +290,17 @@ export default function Playground() {
                     <div className="barrow" key={r.gpu}>
                       <span className="glabel">
                         {r.gpu}
-                        {r.gpu === comparison.fastestGpu && " ⚡"}
-                        {r.gpu === comparison.bestValueGpu && " 💰"}
+                        {r.gpu === comparison.fastestGpu && <Zap size={13} color="#635bff" />}
+                        {r.gpu === comparison.bestValueGpu && (
+                          <DollarSign size={13} color="#1a9d6b" />
+                        )}
                       </span>
                       <div className="bartrack">
-                        <div
+                        <motion.div
                           className={`barfill${r.medianMs === null ? " failed" : ""}`}
-                          style={{ width: `${r.medianMs === null ? 100 : width}%` }}
+                          initial={{ width: 0 }}
+                          animate={{ width: `${r.medianMs === null ? 100 : width}%` }}
+                          transition={{ duration: 0.6, delay: i * 0.07, ease: "easeOut" }}
                         />
                       </div>
                       <span className="btime">
@@ -265,7 +326,9 @@ export default function Playground() {
                     <tr key={r.gpu}>
                       <td>{r.gpu}</td>
                       <td>{fmt(r.medianMs)}</td>
-                      <td>{r.speedupVsSlowest === null ? "—" : `${r.speedupVsSlowest.toFixed(2)}×`}</td>
+                      <td>
+                        {r.speedupVsSlowest === null ? "—" : `${r.speedupVsSlowest.toFixed(2)}×`}
+                      </td>
                       <td>{r.costUsd.toFixed(5)}</td>
                       <td>{r.speedPerDollar === null ? "—" : Math.round(r.speedPerDollar)}</td>
                     </tr>

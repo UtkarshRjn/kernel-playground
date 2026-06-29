@@ -7,34 +7,33 @@ import { createTheme } from "@uiw/codemirror-themes";
 import CodeMirror from "@uiw/react-codemirror";
 import type { KernelLanguage } from "@kp/shared";
 
-// Theme tuned to the app palette (see globals.css).
+// Clean light theme matched to the app palette.
 const kpTheme = createTheme({
-  theme: "dark",
+  theme: "light",
   settings: {
     background: "transparent",
-    foreground: "#dfe6f5",
-    caret: "#7c8cff",
-    selection: "rgba(124,140,255,0.25)",
-    selectionMatch: "rgba(124,140,255,0.18)",
-    lineHighlight: "rgba(255,255,255,0.035)",
+    foreground: "#0a2540",
+    caret: "#635bff",
+    selection: "rgba(99,91,255,0.14)",
+    selectionMatch: "rgba(99,91,255,0.10)",
+    lineHighlight: "rgba(99,91,255,0.04)",
     gutterBackground: "transparent",
-    gutterForeground: "#525a6e",
+    gutterForeground: "#aab4c4",
     gutterBorder: "transparent",
     fontFamily:
       "var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
   },
   styles: [
-    { tag: [t.comment, t.lineComment, t.blockComment], color: "#69718a", fontStyle: "italic" },
-    { tag: [t.keyword, t.controlKeyword, t.definitionKeyword, t.moduleKeyword], color: "#b58bff" },
-    { tag: [t.operatorKeyword], color: "#b58bff" },
-    { tag: [t.typeName, t.className], color: "#54e0c0" },
-    { tag: [t.string, t.special(t.string)], color: "#8fe3b6" },
-    { tag: [t.number, t.bool, t.null, t.atom], color: "#ffcf5c" },
-    { tag: [t.function(t.variableName), t.function(t.propertyName)], color: "#7c8cff" },
-    { tag: [t.propertyName], color: "#9fb0ff" },
-    { tag: [t.operator, t.punctuation, t.bracket], color: "#9aa3b8" },
-    { tag: [t.meta, t.processingInstruction], color: "#b58bff" },
-    { tag: [t.variableName], color: "#dfe6f5" },
+    { tag: [t.comment, t.lineComment, t.blockComment], color: "#8792a2", fontStyle: "italic" },
+    { tag: [t.keyword, t.controlKeyword, t.definitionKeyword, t.moduleKeyword, t.operatorKeyword], color: "#8250df" },
+    { tag: [t.typeName, t.className], color: "#0a7c8a" },
+    { tag: [t.string, t.special(t.string)], color: "#1a9d6b" },
+    { tag: [t.number, t.bool, t.null, t.atom], color: "#b76e00" },
+    { tag: [t.function(t.variableName), t.function(t.propertyName)], color: "#635bff" },
+    { tag: [t.propertyName], color: "#0a2540" },
+    { tag: [t.operator, t.punctuation, t.bracket], color: "#6b7689" },
+    { tag: [t.meta, t.processingInstruction], color: "#8250df" },
+    { tag: [t.variableName], color: "#0a2540" },
   ],
 });
 
@@ -52,7 +51,7 @@ export default function CodeEditor({
     <CodeMirror
       value={value}
       theme={kpTheme}
-      height="460px"
+      height="440px"
       extensions={[langExt]}
       onChange={onChange}
       basicSetup={{
