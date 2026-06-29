@@ -2,9 +2,16 @@
 
 import { buildComparison, type Comparison } from "@kp/core";
 import { GPU_LIST, type GpuType, type KernelLanguage } from "@kp/shared";
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { Header } from "@/components/Header";
 import { trpc } from "@/trpc/client";
+
+// CodeMirror touches the DOM — load it client-side only.
+const CodeEditor = dynamic(() => import("@/components/CodeEditor"), {
+  ssr: false,
+  loading: () => <div className="editor-loading">Loading editor…</div>,
+});
 
 const STARTER_CUDA = `// Define kp_run() (one iteration) + optional kp_setup()/kp_teardown().
 #include <cuda_runtime.h>
@@ -152,11 +159,7 @@ export default function Playground() {
               </div>
               <span className="fname">{language === "cuda" ? "kernel.cu" : "kernel.py"}</span>
             </div>
-            <textarea
-              spellCheck={false}
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-            />
+            <CodeEditor value={code} language={language} onChange={setCode} />
           </div>
 
           <div className="side">

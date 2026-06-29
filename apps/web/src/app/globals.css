@@ -367,19 +367,36 @@ footer.site {
   font-size: 12px;
   color: var(--faint);
 }
-.editor-panel textarea {
-  width: 100%;
-  min-height: 420px;
-  background: transparent;
-  color: #dfe6f5;
-  border: none;
-  padding: 16px 18px;
+.editor-loading {
+  min-height: 460px;
+  display: grid;
+  place-items: center;
+  color: var(--faint);
   font-family: var(--font-mono-stack);
+  font-size: 13px;
+}
+/* CodeMirror surface */
+.editor-panel .cm-editor {
+  background: transparent;
   font-size: 12.5px;
-  line-height: 1.6;
-  resize: vertical;
+}
+.editor-panel .cm-editor.cm-focused {
   outline: none;
-  tab-size: 2;
+}
+.editor-panel .cm-scroller {
+  font-family: var(--font-mono-stack);
+  line-height: 1.6;
+  padding: 8px 4px;
+}
+.editor-panel .cm-gutters {
+  background: transparent;
+  border-right: 1px solid var(--border-soft);
+}
+.editor-panel .cm-lineNumbers .cm-gutterElement {
+  padding: 0 12px 0 14px;
+}
+.editor-panel .cm-content {
+  padding: 0 6px;
 }
 
 .side {
