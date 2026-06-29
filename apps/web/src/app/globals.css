@@ -415,15 +415,24 @@ footer.site {
   border-radius: 8px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--muted);
+  color: var(--faint);
   cursor: pointer;
   border: 1px solid transparent;
+  background: transparent; /* avoid the UA button background (looked "selected" in dark) */
+}
+.tab:hover {
+  color: var(--muted);
+  background: var(--bg-2);
 }
 .tab.active {
-  background: var(--surface);
-  color: var(--text);
-  border-color: var(--border);
-  box-shadow: var(--sh-sm);
+  background: var(--accent-soft);
+  color: var(--accent-600);
+  border-color: transparent;
+  font-weight: 600;
+}
+.tab.active .fext {
+  color: var(--accent-600);
+  opacity: 0.75;
 }
 .tab .fext {
   font-family: var(--font-mono-stack);
