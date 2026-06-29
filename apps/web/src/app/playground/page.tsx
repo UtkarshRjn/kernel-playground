@@ -3,6 +3,7 @@
 import { buildComparison, type Comparison } from "@kp/core";
 import { GPU_LIST, type GpuType, type KernelLanguage } from "@kp/shared";
 import { useEffect, useState } from "react";
+import { Header } from "@/components/Header";
 import { trpc } from "@/trpc/client";
 
 const STARTER_CUDA = `// Define kp_run() (one iteration) + optional kp_setup()/kp_teardown().
@@ -53,11 +54,7 @@ def kp_run():
     add_kernel[(triton.cdiv(N, 1024),)](x, y, out, N, BLOCK=1024)
 `;
 
-const STARTERS: Record<KernelLanguage, string> = {
-  cuda: STARTER_CUDA,
-  triton: STARTER_TRITON,
-};
-
+const STARTERS: Record<KernelLanguage, string> = { cuda: STARTER_CUDA, triton: STARTER_TRITON };
 const DEFAULT_GPUS: GpuType[] = ["T4", "A100_80GB", "H100"];
 
 function fmt(n: number | null, digits = 4): string {
@@ -74,7 +71,10 @@ export default function Playground() {
   const [credits, setCredits] = useState<number | null>(null);
 
   useEffect(() => {
-    trpc.run.credits.query().then((c) => setCredits(c.balance)).catch(() => {});
+    trpc.run.credits
+      .query()
+      .then((c) => setCredits(c.balance))
+      .catch(() => {});
   }, []);
 
   function switchLanguage(lang: KernelLanguage) {
@@ -114,91 +114,165 @@ export default function Playground() {
     }
   }
 
+  // Bar width is proportional to speed (fastest = 100%).
+  const fastestMedian = comparison
+    ? Math.min(
+        ...comparison.rows
+          .map((r) => r.medianMs)
+          .filter((m): m is number => m !== null),
+        Infinity,
+      )
+    : Infinity;
+
   return (
-    <main className="container">
-      <header className="pg-head">
-        <h1 className="pg-title">Playground</h1>
-        <span className="pg-credits">
-          credits: {credits === null ? "…" : credits}
-        </span>
-      </header>
+    <>
+      <Header right={<span className="chip">{credits === null ? "…" : `${credits} credits`}</span>} />
 
-      <div className="pg-langs">
-        {(["cuda", "triton"] as const).map((lang) => (
-          <button
-            key={lang}
-            className={`pg-lang${language === lang ? " active" : ""}`}
-            onClick={() => switchLanguage(lang)}
-          >
-            {lang === "cuda" ? "CUDA" : "Triton"}
-          </button>
-        ))}
-      </div>
+      <main className="container pg-wrap">
+        <div className="pg-top">
+          <div>
+            <h1>Playground</h1>
+            <p>Write a kernel, pick your GPUs, and compare on real hardware.</p>
+          </div>
+        </div>
 
-      <textarea
-        className="pg-editor"
-        spellCheck={false}
-        value={code}
-        onChange={(e) => setCode(e.target.value)}
-      />
-
-      <div className="pg-gpus">
-        {GPU_LIST.map((spec) => (
-          <label key={spec.type} className="pg-gpu">
-            <input
-              type="checkbox"
-              checked={selected.has(spec.type)}
-              onChange={() => toggle(spec.type)}
+        <div className="pg-layout">
+          <div className="editor-panel">
+            <div className="editor-bar">
+              <div className="seg">
+                {(["cuda", "triton"] as const).map((lang) => (
+                  <button
+                    key={lang}
+                    className={language === lang ? "active" : ""}
+                    onClick={() => switchLanguage(lang)}
+                  >
+                    {lang === "cuda" ? "CUDA" : "Triton"}
+                  </button>
+                ))}
+              </div>
+              <span className="fname">{language === "cuda" ? "kernel.cu" : "kernel.py"}</span>
+            </div>
+            <textarea
+              spellCheck={false}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
             />
-            <span>{spec.label}</span>
-            <span className="pg-price">${(spec.pricePerSec * 3600).toFixed(2)}/hr</span>
-          </label>
-        ))}
-      </div>
+          </div>
 
-      <button className="pg-run" disabled={running || selected.size === 0} onClick={run}>
-        {running ? "Running…" : `Run on ${selected.size} GPU${selected.size === 1 ? "" : "s"}`}
-      </button>
+          <div className="side">
+            <div className="panel">
+              <div className="label">Target GPUs</div>
+              <div className="gpu-grid">
+                {GPU_LIST.map((spec) => {
+                  const on = selected.has(spec.type);
+                  return (
+                    <div
+                      key={spec.type}
+                      className={`gpu${on ? " on" : ""}`}
+                      onClick={() => toggle(spec.type)}
+                    >
+                      <span className="tick">{on ? "✓" : ""}</span>
+                      <span className="name">{spec.label}</span>
+                      <span className="price">${(spec.pricePerSec * 3600).toFixed(2)}/hr</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
 
-      {error && <p className="pg-error">{error}</p>}
+            <div className="run-row">
+              <button
+                className="btn btn-primary"
+                disabled={running || selected.size === 0}
+                onClick={run}
+              >
+                {running ? (
+                  <>
+                    <span className="spinner" /> Running…
+                  </>
+                ) : (
+                  `Run on ${selected.size} GPU${selected.size === 1 ? "" : "s"}`
+                )}
+              </button>
+            </div>
 
-      {comparison && (
-        <table className="pg-table">
-          <thead>
-            <tr>
-              <th>GPU</th>
-              <th>Status</th>
-              <th>Median (ms)</th>
-              <th>Speedup</th>
-              <th>Cost (USD)</th>
-              <th>Perf / $</th>
-            </tr>
-          </thead>
-          <tbody>
-            {comparison.rows.map((r) => (
-              <tr key={r.gpu}>
-                <td>
-                  {r.gpu}
-                  {r.gpu === comparison.fastestGpu && <span title="fastest"> ⚡</span>}
-                  {r.gpu === comparison.bestValueGpu && <span title="best value"> 💰</span>}
-                </td>
-                <td>{r.status}</td>
-                <td>{fmt(r.medianMs)}</td>
-                <td>{r.speedupVsSlowest === null ? "—" : `${r.speedupVsSlowest.toFixed(2)}×`}</td>
-                <td>{r.costUsd.toFixed(5)}</td>
-                <td>{fmt(r.speedPerDollar, 0)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+            {error && <div className="error-box">{error}</div>}
+          </div>
+        </div>
 
-      {comparison && (
-        <p className="pg-summary">
-          ⚡ Fastest: <b>{comparison.fastestGpu ?? "—"}</b> · 💰 Best value:{" "}
-          <b>{comparison.bestValueGpu ?? "—"}</b>
-        </p>
-      )}
-    </main>
+        <section className="results">
+          {!comparison && !error && (
+            <div className="empty">
+              Pick your GPUs and hit run — results, speedup bars and perf-per-dollar appear here.
+            </div>
+          )}
+
+          {comparison && (
+            <>
+              <div className="winners">
+                <div className="winner fast">
+                  <div className="k">⚡ Fastest</div>
+                  <div className="v">{comparison.fastestGpu ?? "—"}</div>
+                </div>
+                <div className="winner value">
+                  <div className="k">💰 Best value</div>
+                  <div className="v">{comparison.bestValueGpu ?? "—"}</div>
+                </div>
+              </div>
+
+              <div className="bars">
+                {comparison.rows.map((r) => {
+                  const width =
+                    r.medianMs !== null && fastestMedian !== Infinity
+                      ? (fastestMedian / r.medianMs) * 100
+                      : 0;
+                  return (
+                    <div className="barrow" key={r.gpu}>
+                      <span className="glabel">
+                        {r.gpu}
+                        {r.gpu === comparison.fastestGpu && " ⚡"}
+                        {r.gpu === comparison.bestValueGpu && " 💰"}
+                      </span>
+                      <div className="bartrack">
+                        <div
+                          className={`barfill${r.medianMs === null ? " failed" : ""}`}
+                          style={{ width: `${r.medianMs === null ? 100 : width}%` }}
+                        />
+                      </div>
+                      <span className="btime">
+                        {r.medianMs === null ? r.status : `${fmt(r.medianMs)} ms`}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <table className="rtable">
+                <thead>
+                  <tr>
+                    <th>GPU</th>
+                    <th>Median (ms)</th>
+                    <th>Speedup</th>
+                    <th>Cost (USD)</th>
+                    <th>Perf / $</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {comparison.rows.map((r) => (
+                    <tr key={r.gpu}>
+                      <td>{r.gpu}</td>
+                      <td>{fmt(r.medianMs)}</td>
+                      <td>{r.speedupVsSlowest === null ? "—" : `${r.speedupVsSlowest.toFixed(2)}×`}</td>
+                      <td>{r.costUsd.toFixed(5)}</td>
+                      <td>{r.speedPerDollar === null ? "—" : Math.round(r.speedPerDollar)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+        </section>
+      </main>
+    </>
   );
 }
