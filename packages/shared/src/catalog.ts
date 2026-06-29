@@ -12,7 +12,7 @@ import { GpuType } from "./gpu.js";
 export const GPU_CATALOG: Record<GpuType, GpuSpec> = {
   T4: {
     type: "T4",
-    label: "NVIDIA T4",
+    label: "NVIDIA Tesla T4",
     arch: "Turing",
     memoryGb: 16,
     memoryBandwidthGbs: 320,
