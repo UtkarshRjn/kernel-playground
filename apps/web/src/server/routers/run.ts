@@ -1,16 +1,24 @@
 import {
+  HttpModalProvider,
   InsufficientCreditsError,
   MockExecutionProvider,
   orchestrateRun,
   type KernelSubmission,
 } from "@kp/core";
-import { BenchmarkConfig, GpuType } from "@kp/shared";
+import { BenchmarkConfig, GpuType, type ExecutionProvider } from "@kp/shared";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { publicProcedure, router } from "../trpc";
 
-// TODO(infra): swap MockExecutionProvider for the Modal-backed provider in Phase 1 infra.
-const provider = new MockExecutionProvider();
+// Real GPUs when the Modal endpoint is configured; deterministic mock otherwise.
+function makeProvider(): ExecutionProvider {
+  const url = process.env.EXECUTION_API_URL;
+  const token = process.env.EXECUTION_TOKEN;
+  if (url && token) return new HttpModalProvider(url, token);
+  return new MockExecutionProvider();
+}
+
+const provider = makeProvider();
 
 export const runRouter = router({
   /** Submit a kernel to run on one or more GPUs (single-GPU run or §3 compare). */

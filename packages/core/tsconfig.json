@@ -3,7 +3,10 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "moduleResolution": "Bundler"
+    "moduleResolution": "Bundler",
+    // DOM lib provides the global `fetch`/`Response` types used by HttpModalProvider
+    // (available natively in Node 18+ and the browser).
+    "lib": ["ES2022", "DOM"]
   },
   "include": ["src"],
   "exclude": ["src/**/*.test.ts"]

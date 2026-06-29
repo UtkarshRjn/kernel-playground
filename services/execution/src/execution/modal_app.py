@@ -71,6 +71,37 @@ if _MODAL_AVAILABLE:
         with tempfile.TemporaryDirectory() as d:
             return run_cuda(request, Path(d))
 
+    # CPU image for the HTTP endpoint; it only dispatches to the GPU function above.
+    api_image = (
+        modal.Image.debian_slim(python_version="3.11")
+        .pip_install("fastapi[standard]")
+        .add_local_python_source("execution")
+    )
+
+    @app.function(image=api_image, secrets=[modal.Secret.from_name("kp-exec-secret")])
+    @modal.asgi_app()
+    def web() -> Any:  # pragma: no cover - served by Modal
+        import os
+
+        from fastapi import FastAPI, Header, HTTPException
+
+        from .wire import request_from_json, result_to_json
+
+        api = FastAPI(title="Kernel Playground execution")
+
+        @api.post("/bench")
+        def bench(
+            payload: dict[str, Any], authorization: str | None = Header(default=None)
+        ) -> Any:
+            token = os.environ.get("KP_EXEC_TOKEN", "")
+            if not token or authorization != f"Bearer {token}":
+                raise HTTPException(status_code=401, detail="unauthorized")
+            request = request_from_json(payload)
+            fn = run_target_remote.with_options(gpu=MODAL_GPU[request.gpu])
+            return result_to_json(fn.remote(request))
+
+        return api
+
     @app.local_entrypoint()
     def main(gpu: str = "T4") -> None:  # pragma: no cover - manual verification
         """Compile + benchmark the bundled vector-add example on the given GPU."""
