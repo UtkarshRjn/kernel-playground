@@ -345,6 +345,49 @@ footer.site {
   text-align: center;
 }
 
+/* ---------- Sign in ---------- */
+.signin-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 96px 0;
+}
+.signin-card {
+  max-width: 384px;
+  width: 100%;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--sh-md);
+  padding: 36px 32px;
+}
+.signin-logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 18px;
+}
+.signin-card h1 {
+  font-size: 20px;
+  margin: 0 0 8px;
+  letter-spacing: -0.01em;
+}
+.signin-card > p {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0 0 24px;
+  line-height: 1.5;
+}
+.signin-btn {
+  width: 100%;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+.signin-fine {
+  font-size: 12px;
+  color: var(--faint);
+  margin-top: 14px;
+}
+
 /* ---------- Playground ---------- */
 .pg-wrap {
   padding: 34px 0 96px;

@@ -8,7 +8,7 @@ import type {
   RunResult,
 } from "@kp/shared";
 import { captureCredits, costUsd, estimateHoldCredits } from "./cost.js";
-import { InMemoryCreditLedger } from "./ledger.js";
+import type { CreditLedger } from "./ledger.js";
 
 /** A user's request to run one kernel across one or more GPUs (§3 fan-out). */
 export interface KernelSubmission {
@@ -50,7 +50,7 @@ function targetId(runId: string, gpu: GpuType): string {
 export async function orchestrateRun(
   submission: KernelSubmission,
   provider: ExecutionProvider,
-  ledger: InMemoryCreditLedger,
+  ledger: CreditLedger,
 ): Promise<RunReport> {
   if (submission.gpus.length === 0) throw new Error("at least one GPU is required");
 
@@ -58,7 +58,7 @@ export async function orchestrateRun(
     (sum, gpu) => sum + estimateHoldCredits(gpu, submission.benchmark.timeoutSec),
     0,
   );
-  const holdId = ledger.placeHold(holdCredits);
+  const holdId = await ledger.placeHold(holdCredits);
 
   const requests: RunRequest[] = submission.gpus.map((gpu) => ({
     runId: submission.runId,
@@ -105,13 +105,13 @@ export async function orchestrateRun(
     }
   });
 
-  ledger.settleHold(holdId, captured);
+  await ledger.settleHold(holdId, captured);
 
   return {
     runId: submission.runId,
     targets,
     costUsd: totalCostUsd,
     creditsCharged: captured,
-    balanceAfter: ledger.balance,
+    balanceAfter: await ledger.getBalance(),
   };
 }

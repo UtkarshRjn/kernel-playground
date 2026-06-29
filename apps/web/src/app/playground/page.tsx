@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { CountUp } from "@/components/CountUp";
 import { GpuSelector } from "@/components/GpuSelector";
 import { Header } from "@/components/Header";
+import { track } from "@/components/posthog";
 import { trpc } from "@/trpc/client";
 
 const CodeEditor = dynamic(() => import("@/components/CodeEditor"), {
@@ -141,21 +142,12 @@ export default function Playground() {
     });
   }
 
-  async function createKernel() {
-    return trpc.kernel.create.mutate({
-      name: "playground kernel",
-      language,
-      files: [{ path: language === "cuda" ? "kernel.cu" : "kernel.py", content: code }],
-      entryPoint: "kp_run",
-    });
-  }
-
   async function test() {
     setTesting(true);
     setCon({ tone: "busy", label: "Compiling", title: "Checking your kernel compiles…" });
     try {
-      const { id } = await createKernel();
-      const res = await trpc.run.test.mutate({ kernelId: id });
+      const res = await trpc.run.test.mutate({ language, code });
+      track("kernel_tested", { language, status: res.status });
       if (res.status === "succeeded") {
         setTested("pass");
         setCon({
@@ -198,11 +190,11 @@ export default function Playground() {
     setComparison(null);
     setCon({ tone: "busy", label: "Submitting", title: `Running on ${selected.size} GPUs…` });
     try {
-      const { id } = await createKernel();
-      const report = await trpc.run.submit.mutate({ kernelId: id, gpus: [...selected] });
+      const report = await trpc.run.submit.mutate({ language, code, gpus: [...selected] });
       await refreshCredits();
       setComparison(buildComparison(report.targets));
       const ok = report.targets.filter((t) => t.status === "succeeded").length;
+      track("kernel_submitted", { language, gpus: [...selected], ok });
       const failed = report.targets.filter((t) => t.status !== "succeeded");
       setCon({
         tone: failed.length ? "fail" : "pass",
