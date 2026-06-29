@@ -85,6 +85,14 @@ if _MODAL_AVAILABLE:
         with tempfile.TemporaryDirectory() as d:
             return run_triton(request, Path(d))
 
+    # CPU-only compile/syntax check (the cheap "Test" path) — no gpu= means CPU.
+    @app.function(image=image, timeout=180)
+    def compile_check_remote(request: RunRequest) -> RunResult:  # pragma: no cover - on CPU
+        from .checker import compile_check
+
+        with tempfile.TemporaryDirectory() as d:
+            return compile_check(request, Path(d))
+
     # CPU image for the HTTP endpoint; it only dispatches to the GPU function above.
     api_image = (
         modal.Image.debian_slim(python_version="3.11")
@@ -118,6 +126,14 @@ if _MODAL_AVAILABLE:
             )
             fn = runner.with_options(gpu=MODAL_GPU[request.gpu])
             return result_to_json(fn.remote(request))
+
+        @api.post("/test")
+        def test(payload: dict[str, Any], authorization: str | None = Header(default=None)) -> Any:
+            token = os.environ.get("KP_EXEC_TOKEN", "")
+            if not token or authorization != f"Bearer {token}":
+                raise HTTPException(status_code=401, detail="unauthorized")
+            request = request_from_json(payload)
+            return result_to_json(compile_check_remote.remote(request))
 
         return api
 

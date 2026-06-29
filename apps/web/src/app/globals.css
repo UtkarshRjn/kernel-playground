@@ -415,15 +415,24 @@ footer.site {
   border-radius: 8px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--muted);
+  color: var(--faint);
   cursor: pointer;
   border: 1px solid transparent;
+  background: transparent; /* avoid the UA button background (looked "selected" in dark) */
+}
+.tab:hover {
+  color: var(--muted);
+  background: var(--bg-2);
 }
 .tab.active {
-  background: var(--surface);
-  color: var(--text);
-  border-color: var(--border);
-  box-shadow: var(--sh-sm);
+  background: var(--accent-soft);
+  color: var(--accent-600);
+  border-color: transparent;
+  font-weight: 600;
+}
+.tab.active .fext {
+  color: var(--accent-600);
+  opacity: 0.75;
 }
 .tab .fext {
   font-family: var(--font-mono-stack);
@@ -814,15 +823,36 @@ footer.site {
 .empty {
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius);
-  padding: 48px 24px;
+  padding: 40px 24px;
   text-align: center;
-  color: var(--faint);
-  font-size: 14px;
   background: var(--surface-2);
 }
 .empty .ic {
-  color: var(--border-strong);
-  margin-bottom: 10px;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--accent);
+  background: var(--accent-soft);
+  margin-bottom: 14px;
+}
+.empty-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.empty-sub {
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.6;
+  max-width: 520px;
+  margin: 0 auto;
+}
+.empty-sub b {
+  color: var(--text);
+  font-weight: 600;
 }
 
 /* ---------- Theme toggle ---------- */

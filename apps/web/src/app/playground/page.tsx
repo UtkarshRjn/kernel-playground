@@ -4,11 +4,11 @@ import { buildComparison, type Comparison } from "@kp/core";
 import { type GpuType, type KernelLanguage } from "@kp/shared";
 import { motion } from "framer-motion";
 import {
+  BarChart3,
   Copy,
   DollarSign,
   FileCode2,
   FlaskConical,
-  Inbox,
   RotateCcw,
   Send,
   Terminal,
@@ -77,7 +77,6 @@ def kp_run():
 
 const STARTERS: Record<KernelLanguage, string> = { cuda: STARTER_CUDA, triton: STARTER_TRITON };
 const DEFAULT_GPUS: GpuType[] = ["T4", "A100_80GB", "H100"];
-const TEST_GPU: GpuType = "T4";
 
 type ConTone = "idle" | "busy" | "pass" | "fail";
 interface ConState {
@@ -103,7 +102,7 @@ export default function Playground() {
   const [con, setCon] = useState<ConState>({
     tone: "idle",
     label: "Ready",
-    title: "Test your kernel on T4 to check it compiles and runs, then submit to compare GPUs.",
+    title: "Test (free) checks your kernel compiles. Then Submit to benchmark across GPUs.",
   });
 
   useEffect(() => {
@@ -153,55 +152,41 @@ export default function Playground() {
 
   async function test() {
     setTesting(true);
-    setComparison(null);
-    setCon({ tone: "busy", label: "Testing", title: `Compiling and running on ${TEST_GPU}…` });
+    setCon({ tone: "busy", label: "Compiling", title: "Checking your kernel compiles…" });
     try {
       const { id } = await createKernel();
-      const report = await trpc.run.submit.mutate({ kernelId: id, gpus: [TEST_GPU] });
-      await refreshCredits();
-      const tgt = report.targets[0];
-      if (!tgt) throw new Error("no result returned");
-      if (tgt.status === "succeeded") {
+      const res = await trpc.run.test.mutate({ kernelId: id });
+      if (res.status === "succeeded") {
         setTested("pass");
-        const ms = tgt.stats ? ` · ${tgt.stats.medianMs.toFixed(4)} ms median` : "";
         setCon({
           tone: "pass",
-          label: "Passed",
-          title: `Compiled & ran on ${TEST_GPU}${ms}`,
-          detail: tgt.stdout?.trim() || undefined,
+          label: "Compiles",
+          title: "Your kernel compiles cleanly — ready to submit.",
+          detail: res.stdout?.trim() || undefined,
         });
-        toast.success("Test passed — ready to submit");
-      } else if (tgt.status === "compile_error") {
+        toast.success("Compiles — ready to submit");
+      } else if (res.status === "compile_error") {
         setTested("fail");
         setCon({
           tone: "fail",
           label: "Compile error",
-          title: `Compilation failed on ${TEST_GPU}`,
-          detail: tgt.diagnostics || tgt.stderr || "Unknown compile error",
+          title: "Compilation failed",
+          detail: res.diagnostics || res.stderr || "Unknown compile error",
         });
         toast.error("Compilation failed");
-      } else if (tgt.status === "runtime_error") {
-        setTested("fail");
-        setCon({
-          tone: "fail",
-          label: "Runtime error",
-          title: `Runtime error on ${TEST_GPU}`,
-          detail: tgt.diagnostics || tgt.stderr || tgt.stdout || "Unknown runtime error",
-        });
-        toast.error("Runtime error");
       } else {
         setTested("fail");
         setCon({
           tone: "fail",
-          label: tgt.status,
-          title: `${tgt.status} on ${TEST_GPU}`,
-          detail: tgt.diagnostics || tgt.stderr || undefined,
+          label: "Error",
+          title: "Could not check the kernel",
+          detail: res.diagnostics || res.stderr || res.status,
         });
-        toast.error(tgt.status);
+        toast.error("Test failed");
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setCon({ tone: "fail", label: "Error", title: msg });
+      setCon({ tone: "fail", label: "Error", title: "Could not check the kernel", detail: msg });
       toast.error(msg);
     } finally {
       setTesting(false);
@@ -345,11 +330,15 @@ export default function Playground() {
               <button className="btn btn-ghost run-btn" disabled={busy} onClick={test}>
                 {testing ? (
                   <>
-                    <span className="spinner" style={{ borderTopColor: "var(--text)", borderColor: "var(--border-strong)" }} /> Testing on {TEST_GPU}…
+                    <span
+                      className="spinner"
+                      style={{ borderTopColor: "var(--text)", borderColor: "var(--border-strong)" }}
+                    />{" "}
+                    Compiling…
                   </>
                 ) : (
                   <>
-                    <FlaskConical size={16} /> Test on {TEST_GPU}
+                    <FlaskConical size={16} /> Test (free)
                   </>
                 )}
               </button>
@@ -391,9 +380,14 @@ export default function Playground() {
           {!submitting && !comparison && (
             <div className="empty">
               <div className="ic">
-                <Inbox size={28} />
+                <BarChart3 size={24} />
               </div>
-              Submit to run across your selected GPUs — speedup bars and perf-per-dollar appear here.
+              <div className="empty-title">No results yet</div>
+              <div className="empty-sub">
+                Hit <b>Test (free)</b> to check your kernel compiles, then <b>Submit</b> to
+                benchmark it across your selected GPUs — speedup bars and perf-per-dollar land
+                here.
+              </div>
             </div>
           )}
 

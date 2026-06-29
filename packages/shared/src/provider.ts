@@ -19,6 +19,12 @@ export interface ExecutionProvider {
    */
   run(request: RunRequest): Promise<RunResult>;
 
+  /**
+   * GPU-free compile/syntax check (the cheap "Test" path). Returns a RunResult with
+   * status `succeeded` or `compile_error` — never runs the kernel on a GPU.
+   */
+  compileCheck(request: RunRequest): Promise<RunResult>;
+
   /** Best-effort cancellation of an in-flight target (§11 kill-on-overrun). */
   cancel(targetId: string): Promise<void>;
 }

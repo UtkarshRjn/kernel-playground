@@ -75,6 +75,51 @@ def parse_result_line(stdout: str) -> list[float]:
     raise ValueError("no KP_RESULT line found in program output")
 
 
+def _materialize(request: RunRequest, workdir: Path) -> list[str]:
+    """Write user .cu sources + the injected benchmark driver; return source filenames."""
+    src_names: list[str] = []
+    for f in request.files:
+        path = workdir / f.path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f.content)
+        if f.path.endswith(".cu"):
+            src_names.append(f.path)
+    (workdir / "kp_main.cu").write_text(harness_main_path().read_text())
+    src_names.append("kp_main.cu")
+    return src_names
+
+
+def compile_only(request: RunRequest, workdir: Path) -> RunResult:
+    """Compile a CUDA submission WITHOUT running it — a GPU-free syntax/compile check.
+
+    nvcc targets a compute arch and emits a binary without needing a physical GPU, so this
+    runs on a cheap CPU container. Catches compile errors only; never executes the kernel.
+    """
+    started = time.monotonic()
+    src_names = _materialize(request, workdir)
+    cmd = build_nvcc_command(src_names, "kp_prog", request.gpu, request.compiler_flags)
+    proc = subprocess.run(cmd, cwd=workdir, capture_output=True, text=True, timeout=120)
+    elapsed = time.monotonic() - started
+    if proc.returncode != 0:
+        return RunResult(
+            run_id=request.run_id,
+            target_id=request.target_id,
+            gpu=request.gpu,
+            status=RunStatus.COMPILE_ERROR,
+            gpu_seconds=elapsed,
+            stderr=proc.stderr,
+            diagnostics=proc.stderr,
+        )
+    return RunResult(
+        run_id=request.run_id,
+        target_id=request.target_id,
+        gpu=request.gpu,
+        status=RunStatus.SUCCEEDED,
+        gpu_seconds=elapsed,
+        stdout="Compiled successfully.",
+    )
+
+
 def run_cuda(request: RunRequest, workdir: Path) -> RunResult:
     """Compile and benchmark a CUDA submission inside ``workdir`` on a GPU host."""
     started = time.monotonic()
@@ -89,17 +134,7 @@ def run_cuda(request: RunRequest, workdir: Path) -> RunResult:
             **kw,  # type: ignore[arg-type]
         )
 
-    # Materialize user sources + the injected benchmark driver.
-    src_names: list[str] = []
-    for f in request.files:
-        path = workdir / f.path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(f.content)
-        if f.path.endswith(".cu"):
-            src_names.append(f.path)
-    (workdir / "kp_main.cu").write_text(harness_main_path().read_text())
-    src_names.append("kp_main.cu")
-
+    src_names = _materialize(request, workdir)
     binary = "kp_prog"
     compile_cmd = build_nvcc_command(src_names, binary, request.gpu, request.compiler_flags)
     compile_proc = subprocess.run(

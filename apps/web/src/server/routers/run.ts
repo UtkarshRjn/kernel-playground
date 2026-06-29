@@ -5,7 +5,7 @@ import {
   orchestrateRun,
   type KernelSubmission,
 } from "@kp/core";
-import { BenchmarkConfig, GpuType, type ExecutionProvider } from "@kp/shared";
+import { BenchmarkConfig, GpuType, type ExecutionProvider, type RunRequest } from "@kp/shared";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { publicProcedure, router } from "../trpc";
@@ -73,6 +73,33 @@ export const runRouter = router({
       });
 
       return report;
+    }),
+
+  /** Free, GPU-free compile/syntax check — the cheap "Test" before submitting. */
+  test: publicProcedure
+    .input(z.object({ kernelId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const kernel = ctx.store.kernels.get(input.kernelId);
+      if (!kernel) throw new TRPCError({ code: "NOT_FOUND", message: "kernel not found" });
+      const request: RunRequest = {
+        runId: ctx.store.nextId("test"),
+        targetId: "test",
+        idempotencyKey: `test:${kernel.id}`,
+        language: kernel.language,
+        gpu: "T4", // placeholder; the compile check never touches a real device
+        files: kernel.files,
+        entryPoint: kernel.entryPoint,
+        compilerFlags: [],
+        benchmark: BenchmarkConfig.parse({}),
+      };
+      try {
+        return await provider.compileCheck(request);
+      } catch (err) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
     }),
 
   get: publicProcedure.input(z.object({ id: z.string() })).query(({ ctx, input }) => {

@@ -1,4 +1,5 @@
 import type { ExecutionProvider, GpuType, RunRequest, RunResult } from "@kp/shared";
+import { offlineSyntaxCheck } from "./syntax-check.js";
 
 /** Relative speed factors (smaller = faster). Dev-only, mirrors the Python MockProvider. */
 const SPEED: Record<GpuType, number> = {
@@ -47,6 +48,40 @@ export class MockExecutionProvider implements ExecutionProvider {
       },
       metrics: null,
       stdout: `[mock] ran ${request.entryPoint} on ${request.gpu}\n`,
+      stderr: "",
+      diagnostics: null,
+    };
+  }
+
+  async compileCheck(request: RunRequest): Promise<RunResult> {
+    // Offline heuristic check (no real compiler available). The Modal nvcc/python
+    // backend is the source of truth; this catches obvious mistakes so the mock
+    // doesn't blindly pass broken code.
+    const code = request.files.map((f) => f.content).join("\n");
+    const issue = offlineSyntaxCheck(code, request.language);
+    if (issue) {
+      return {
+        runId: request.runId,
+        targetId: request.targetId,
+        gpu: request.gpu,
+        status: "compile_error",
+        gpuSeconds: 0,
+        stats: null,
+        metrics: null,
+        stdout: "",
+        stderr: issue,
+        diagnostics: `Offline syntax check: ${issue}`,
+      };
+    }
+    return {
+      runId: request.runId,
+      targetId: request.targetId,
+      gpu: request.gpu,
+      status: "succeeded",
+      gpuSeconds: 0,
+      stats: null,
+      metrics: null,
+      stdout: "Passed offline syntax check (mock — not a full compile).",
       stderr: "",
       diagnostics: null,
     };

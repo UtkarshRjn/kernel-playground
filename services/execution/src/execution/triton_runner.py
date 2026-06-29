@@ -44,6 +44,44 @@ def _entry_source(request: RunRequest) -> tuple[str, str]:
     return chosen.content, chosen.path
 
 
+def syntax_check(request: RunRequest) -> RunResult:
+    """GPU-free check for a Triton submission: Python syntax + kp_run presence.
+
+    Uses ``compile()`` (parse only, no import of torch/triton) so it runs on a cheap CPU
+    container. Catches syntax errors; deeper Triton JIT errors only surface on a GPU run.
+    """
+    source, path = _entry_source(request)
+    try:
+        compile(source, path, "exec")
+    except SyntaxError as e:
+        detail = f"{path}:{e.lineno}: {e.msg}"
+        return RunResult(
+            run_id=request.run_id,
+            target_id=request.target_id,
+            gpu=request.gpu,
+            status=RunStatus.COMPILE_ERROR,
+            gpu_seconds=0.0,
+            diagnostics=detail,
+        )
+    if "def kp_run" not in source:
+        return RunResult(
+            run_id=request.run_id,
+            target_id=request.target_id,
+            gpu=request.gpu,
+            status=RunStatus.COMPILE_ERROR,
+            gpu_seconds=0.0,
+            diagnostics="submission must define kp_run()",
+        )
+    return RunResult(
+        run_id=request.run_id,
+        target_id=request.target_id,
+        gpu=request.gpu,
+        status=RunStatus.SUCCEEDED,
+        gpu_seconds=0.0,
+        stdout="Syntax OK.",
+    )
+
+
 def run_triton(request: RunRequest, workdir: Path) -> RunResult:
     """Run + benchmark a Triton submission on a GPU host using torch CUDA events."""
     started = time.monotonic()
