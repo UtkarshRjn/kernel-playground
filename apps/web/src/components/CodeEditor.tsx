@@ -6,9 +6,36 @@ import { tags as t } from "@lezer/highlight";
 import { createTheme } from "@uiw/codemirror-themes";
 import CodeMirror from "@uiw/react-codemirror";
 import type { KernelLanguage } from "@kp/shared";
+import { useTheme } from "@/components/theme";
 
-// Clean light theme matched to the app palette.
-const kpTheme = createTheme({
+const sharedStyles = (c: {
+  comment: string;
+  keyword: string;
+  type: string;
+  string: string;
+  number: string;
+  func: string;
+  prop: string;
+  op: string;
+}) => [
+  { tag: [t.comment, t.lineComment, t.blockComment], color: c.comment, fontStyle: "italic" },
+  {
+    tag: [t.keyword, t.controlKeyword, t.definitionKeyword, t.moduleKeyword, t.operatorKeyword],
+    color: c.keyword,
+  },
+  { tag: [t.typeName, t.className], color: c.type },
+  { tag: [t.string, t.special(t.string)], color: c.string },
+  { tag: [t.number, t.bool, t.null, t.atom], color: c.number },
+  { tag: [t.function(t.variableName), t.function(t.propertyName)], color: c.func },
+  { tag: [t.propertyName], color: c.prop },
+  { tag: [t.operator, t.punctuation, t.bracket], color: c.op },
+  { tag: [t.meta, t.processingInstruction], color: c.keyword },
+];
+
+const FONT =
+  "var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+
+const lightTheme = createTheme({
   theme: "light",
   settings: {
     background: "transparent",
@@ -20,21 +47,44 @@ const kpTheme = createTheme({
     gutterBackground: "transparent",
     gutterForeground: "#aab4c4",
     gutterBorder: "transparent",
-    fontFamily:
-      "var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+    fontFamily: FONT,
   },
-  styles: [
-    { tag: [t.comment, t.lineComment, t.blockComment], color: "#8792a2", fontStyle: "italic" },
-    { tag: [t.keyword, t.controlKeyword, t.definitionKeyword, t.moduleKeyword, t.operatorKeyword], color: "#8250df" },
-    { tag: [t.typeName, t.className], color: "#0a7c8a" },
-    { tag: [t.string, t.special(t.string)], color: "#1a9d6b" },
-    { tag: [t.number, t.bool, t.null, t.atom], color: "#b76e00" },
-    { tag: [t.function(t.variableName), t.function(t.propertyName)], color: "#635bff" },
-    { tag: [t.propertyName], color: "#0a2540" },
-    { tag: [t.operator, t.punctuation, t.bracket], color: "#6b7689" },
-    { tag: [t.meta, t.processingInstruction], color: "#8250df" },
-    { tag: [t.variableName], color: "#0a2540" },
-  ],
+  styles: sharedStyles({
+    comment: "#8792a2",
+    keyword: "#8250df",
+    type: "#0a7c8a",
+    string: "#1a9d6b",
+    number: "#b76e00",
+    func: "#635bff",
+    prop: "#0a2540",
+    op: "#6b7689",
+  }),
+});
+
+const darkTheme = createTheme({
+  theme: "dark",
+  settings: {
+    background: "transparent",
+    foreground: "#dfe6f5",
+    caret: "#8b93ff",
+    selection: "rgba(139,147,255,0.22)",
+    selectionMatch: "rgba(139,147,255,0.16)",
+    lineHighlight: "rgba(255,255,255,0.035)",
+    gutterBackground: "transparent",
+    gutterForeground: "#5b6375",
+    gutterBorder: "transparent",
+    fontFamily: FONT,
+  },
+  styles: sharedStyles({
+    comment: "#69718a",
+    keyword: "#c4a7ff",
+    type: "#5ce0c8",
+    string: "#7fdca6",
+    number: "#ffcf5c",
+    func: "#9fb0ff",
+    prop: "#dfe6f5",
+    op: "#9aa3b8",
+  }),
 });
 
 export default function CodeEditor({
@@ -46,12 +96,13 @@ export default function CodeEditor({
   language: KernelLanguage;
   onChange: (value: string) => void;
 }) {
+  const { mode } = useTheme();
   const langExt = language === "cuda" ? cpp() : python();
   return (
     <CodeMirror
       value={value}
-      theme={kpTheme}
-      height="440px"
+      theme={mode === "dark" ? darkTheme : lightTheme}
+      height="100%"
       extensions={[langExt]}
       onChange={onChange}
       basicSetup={{
@@ -63,7 +114,7 @@ export default function CodeEditor({
         bracketMatching: true,
         indentOnInput: true,
       }}
-      style={{ fontSize: 12.5 }}
+      style={{ fontSize: 12.5, height: "100%" }}
     />
   );
 }

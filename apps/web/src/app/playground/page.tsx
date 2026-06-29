@@ -3,8 +3,17 @@
 import { buildComparison, type Comparison } from "@kp/core";
 import { type GpuType, type KernelLanguage } from "@kp/shared";
 import { motion } from "framer-motion";
-import { Copy, FileCode2, Inbox, RotateCcw, Zap } from "lucide-react";
-import { DollarSign } from "lucide-react";
+import {
+  Copy,
+  DollarSign,
+  FileCode2,
+  FlaskConical,
+  Inbox,
+  RotateCcw,
+  Send,
+  Terminal,
+  Zap,
+} from "lucide-react";
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -68,6 +77,15 @@ def kp_run():
 
 const STARTERS: Record<KernelLanguage, string> = { cuda: STARTER_CUDA, triton: STARTER_TRITON };
 const DEFAULT_GPUS: GpuType[] = ["T4", "A100_80GB", "H100"];
+const TEST_GPU: GpuType = "T4";
+
+type ConTone = "idle" | "busy" | "pass" | "fail";
+interface ConState {
+  tone: ConTone;
+  label: string;
+  title?: string;
+  detail?: string;
+}
 
 function fmt(n: number | null, digits = 4): string {
   return n === null ? "—" : n.toFixed(digits);
@@ -77,9 +95,16 @@ export default function Playground() {
   const [language, setLanguage] = useState<KernelLanguage>("cuda");
   const [code, setCode] = useState(STARTER_CUDA);
   const [selected, setSelected] = useState<Set<GpuType>>(new Set(DEFAULT_GPUS));
-  const [running, setRunning] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [tested, setTested] = useState<"pass" | "fail" | null>(null);
   const [comparison, setComparison] = useState<Comparison | null>(null);
   const [credits, setCredits] = useState<number | null>(null);
+  const [con, setCon] = useState<ConState>({
+    tone: "idle",
+    label: "Ready",
+    title: "Test your kernel on T4 to check it compiles and runs, then submit to compare GPUs.",
+  });
 
   useEffect(() => {
     trpc.run.credits
@@ -88,10 +113,24 @@ export default function Playground() {
       .catch(() => {});
   }, []);
 
+  function refreshCredits() {
+    return trpc.run.credits
+      .query()
+      .then((c) => setCredits(c.balance))
+      .catch(() => {});
+  }
+
+  function onCodeChange(v: string) {
+    setCode(v);
+    setTested(null); // editing invalidates a prior passing test
+  }
+
   function switchLanguage(lang: KernelLanguage) {
     setLanguage(lang);
     setCode(STARTERS[lang]);
+    setTested(null);
     setComparison(null);
+    setCon({ tone: "idle", label: "Ready", title: "Test your kernel, then submit to compare GPUs." });
   }
 
   function toggle(gpu: GpuType) {
@@ -103,38 +142,112 @@ export default function Playground() {
     });
   }
 
-  async function run() {
-    setRunning(true);
+  async function createKernel() {
+    return trpc.kernel.create.mutate({
+      name: "playground kernel",
+      language,
+      files: [{ path: language === "cuda" ? "kernel.cu" : "kernel.py", content: code }],
+      entryPoint: "kp_run",
+    });
+  }
+
+  async function test() {
+    setTesting(true);
     setComparison(null);
+    setCon({ tone: "busy", label: "Testing", title: `Compiling and running on ${TEST_GPU}…` });
     try {
-      const { id } = await trpc.kernel.create.mutate({
-        name: "playground kernel",
-        language,
-        files: [{ path: language === "cuda" ? "kernel.cu" : "kernel.py", content: code }],
-        entryPoint: "kp_run",
-      });
-      const report = await trpc.run.submit.mutate({ kernelId: id, gpus: [...selected] });
-      setComparison(buildComparison(report.targets));
-      const c = await trpc.run.credits.query();
-      setCredits(c.balance);
-      const ok = report.targets.filter((t) => t.status === "succeeded").length;
-      toast.success(`Ran on ${ok} GPU${ok === 1 ? "" : "s"} · ${report.creditsCharged} credits`);
+      const { id } = await createKernel();
+      const report = await trpc.run.submit.mutate({ kernelId: id, gpus: [TEST_GPU] });
+      await refreshCredits();
+      const tgt = report.targets[0];
+      if (!tgt) throw new Error("no result returned");
+      if (tgt.status === "succeeded") {
+        setTested("pass");
+        const ms = tgt.stats ? ` · ${tgt.stats.medianMs.toFixed(4)} ms median` : "";
+        setCon({
+          tone: "pass",
+          label: "Passed",
+          title: `Compiled & ran on ${TEST_GPU}${ms}`,
+          detail: tgt.stdout?.trim() || undefined,
+        });
+        toast.success("Test passed — ready to submit");
+      } else if (tgt.status === "compile_error") {
+        setTested("fail");
+        setCon({
+          tone: "fail",
+          label: "Compile error",
+          title: `Compilation failed on ${TEST_GPU}`,
+          detail: tgt.diagnostics || tgt.stderr || "Unknown compile error",
+        });
+        toast.error("Compilation failed");
+      } else if (tgt.status === "runtime_error") {
+        setTested("fail");
+        setCon({
+          tone: "fail",
+          label: "Runtime error",
+          title: `Runtime error on ${TEST_GPU}`,
+          detail: tgt.diagnostics || tgt.stderr || tgt.stdout || "Unknown runtime error",
+        });
+        toast.error("Runtime error");
+      } else {
+        setTested("fail");
+        setCon({
+          tone: "fail",
+          label: tgt.status,
+          title: `${tgt.status} on ${TEST_GPU}`,
+          detail: tgt.diagnostics || tgt.stderr || undefined,
+        });
+        toast.error(tgt.status);
+      }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setCon({ tone: "fail", label: "Error", title: msg });
+      toast.error(msg);
     } finally {
-      setRunning(false);
+      setTesting(false);
     }
   }
 
-  function reset() {
-    setCode(STARTERS[language]);
-    toast.success("Reset to starter kernel");
+  async function submit() {
+    setSubmitting(true);
+    setComparison(null);
+    setCon({ tone: "busy", label: "Submitting", title: `Running on ${selected.size} GPUs…` });
+    try {
+      const { id } = await createKernel();
+      const report = await trpc.run.submit.mutate({ kernelId: id, gpus: [...selected] });
+      await refreshCredits();
+      setComparison(buildComparison(report.targets));
+      const ok = report.targets.filter((t) => t.status === "succeeded").length;
+      const failed = report.targets.filter((t) => t.status !== "succeeded");
+      setCon({
+        tone: failed.length ? "fail" : "pass",
+        label: failed.length ? "Partial" : "Submitted",
+        title: `Ran on ${ok}/${report.targets.length} GPUs · ${report.creditsCharged} credits`,
+        detail: failed.length
+          ? failed.map((t) => `${t.gpu}: ${t.status}`).join("\n")
+          : undefined,
+      });
+      toast.success(`Submitted · ${report.creditsCharged} credits`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setCon({ tone: "fail", label: "Error", title: msg });
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
   }
+
   async function copy() {
     await navigator.clipboard.writeText(code);
     toast.success("Copied to clipboard");
   }
+  function reset() {
+    setCode(STARTERS[language]);
+    setTested(null);
+    toast.success("Reset to starter kernel");
+  }
 
+  const busy = testing || submitting;
   const lines = code.split("\n").length;
   const fastestMedian = comparison
     ? Math.min(
@@ -154,69 +267,116 @@ export default function Playground() {
       <main className="container pg-wrap">
         <div className="pg-top">
           <h1>Playground</h1>
-          <p>Write a kernel, pick your GPUs, and compare on real hardware.</p>
+          <p>Write a kernel, test it, then submit to compare across real GPUs.</p>
         </div>
 
         <div className="pg-layout">
-          <div className="editor-panel">
-            <div className="editor-tabs">
-              <div style={{ display: "flex", gap: 6 }}>
-                {(["cuda", "triton"] as const).map((lang) => (
-                  <button
-                    key={lang}
-                    className={`tab${language === lang ? " active" : ""}`}
-                    onClick={() => switchLanguage(lang)}
-                  >
-                    <FileCode2 size={14} />
-                    kernel<span className="fext">.{lang === "cuda" ? "cu" : "py"}</span>
+          {/* Left: editor + console */}
+          <div className="col-left">
+            <div className="editor-panel">
+              <div className="editor-tabs">
+                <div style={{ display: "flex", gap: 6 }}>
+                  {(["cuda", "triton"] as const).map((lang) => (
+                    <button
+                      key={lang}
+                      className={`tab${language === lang ? " active" : ""}`}
+                      onClick={() => switchLanguage(lang)}
+                    >
+                      <FileCode2 size={14} />
+                      kernel<span className="fext">.{lang === "cuda" ? "cu" : "py"}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="editor-tools">
+                  <button className="icon-btn" title="Copy" onClick={copy}>
+                    <Copy size={15} />
                   </button>
-                ))}
+                  <button className="icon-btn" title="Reset to starter" onClick={reset}>
+                    <RotateCcw size={15} />
+                  </button>
+                </div>
               </div>
-              <div className="editor-tools">
-                <button className="icon-btn" title="Copy" onClick={copy}>
-                  <Copy size={15} />
-                </button>
-                <button className="icon-btn" title="Reset to starter" onClick={reset}>
-                  <RotateCcw size={15} />
-                </button>
+              <div className="editor-area">
+                <CodeEditor value={code} language={language} onChange={onCodeChange} />
+              </div>
+              <div className="editor-status">
+                <span>{language === "cuda" ? "CUDA C++" : "Triton · Python"}</span>
+                <span>{lines} lines</span>
+                <span
+                  className={tested === "pass" ? "ok" : ""}
+                  style={{ marginLeft: "auto" }}
+                >
+                  {busy ? "Running…" : tested === "pass" ? "● Tested" : "● Ready"}
+                </span>
               </div>
             </div>
-            <CodeEditor value={code} language={language} onChange={setCode} />
-            <div className="editor-status">
-              <span>{language === "cuda" ? "CUDA C++" : "Triton · Python"}</span>
-              <span>{lines} lines</span>
-              <span className={running ? "" : "ok"} style={{ marginLeft: "auto" }}>
-                {running ? "Running…" : "● Ready"}
-              </span>
+
+            {/* Console */}
+            <div className="console">
+              <div className="console-head">
+                <span className="title">
+                  <Terminal size={14} /> Console
+                </span>
+                <span className={`status-pill ${con.tone}`}>
+                  {con.tone === "busy" && <span className="spinner" style={{ borderTopColor: "currentColor", borderColor: "rgba(0,0,0,0.15)" }} />}
+                  {con.label}
+                </span>
+              </div>
+              <div className="console-body">
+                {con.title && (
+                  <div className={con.tone === "fail" ? "cline-err" : con.tone === "pass" ? "cline-ok" : con.tone === "idle" ? "console-empty" : ""}>
+                    {con.tone === "pass" ? "✓ " : con.tone === "fail" ? "✗ " : ""}
+                    {con.title}
+                  </div>
+                )}
+                {con.detail && <div className="cdim" style={{ marginTop: 8 }}>{con.detail}</div>}
+              </div>
             </div>
           </div>
 
+          {/* Right: GPU selector + actions */}
           <div className="side">
             <GpuSelector
               selected={selected}
               onToggle={toggle}
               onPreset={(gpus) => setSelected(new Set(gpus))}
             />
-            <button
-              className="btn btn-primary btn-lg run-btn"
-              disabled={running || selected.size === 0}
-              onClick={run}
-            >
-              {running ? (
-                <>
-                  <span className="spinner" /> Running…
-                </>
-              ) : (
-                <>
-                  <Zap size={16} /> Run on {selected.size} GPU{selected.size === 1 ? "" : "s"}
-                </>
+            <div className="action-row">
+              <button className="btn btn-ghost run-btn" disabled={busy} onClick={test}>
+                {testing ? (
+                  <>
+                    <span className="spinner" style={{ borderTopColor: "var(--text)", borderColor: "var(--border-strong)" }} /> Testing on {TEST_GPU}…
+                  </>
+                ) : (
+                  <>
+                    <FlaskConical size={16} /> Test on {TEST_GPU}
+                  </>
+                )}
+              </button>
+              <button
+                className="btn btn-primary run-btn"
+                disabled={busy || selected.size === 0 || tested !== "pass"}
+                onClick={submit}
+              >
+                {submitting ? (
+                  <>
+                    <span className="spinner" /> Submitting…
+                  </>
+                ) : (
+                  <>
+                    <Send size={15} /> Submit · {selected.size} GPU{selected.size === 1 ? "" : "s"}
+                  </>
+                )}
+              </button>
+              {tested !== "pass" && !busy && (
+                <span className="hint">Run a passing test before submitting.</span>
               )}
-            </button>
+            </div>
           </div>
         </div>
 
         <section className="results">
-          {running && (
+          {submitting && (
             <div className="bars">
               {[...selected].map((g) => (
                 <div className="barrow" key={g}>
@@ -228,16 +388,16 @@ export default function Playground() {
             </div>
           )}
 
-          {!running && !comparison && (
+          {!submitting && !comparison && (
             <div className="empty">
               <div className="ic">
                 <Inbox size={28} />
               </div>
-              Pick your GPUs and hit run — results, speedup bars and perf-per-dollar appear here.
+              Submit to run across your selected GPUs — speedup bars and perf-per-dollar appear here.
             </div>
           )}
 
-          {!running && comparison && (
+          {!submitting && comparison && (
             <>
               <div className="winners">
                 <motion.div
@@ -290,9 +450,9 @@ export default function Playground() {
                     <div className="barrow" key={r.gpu}>
                       <span className="glabel">
                         {r.gpu}
-                        {r.gpu === comparison.fastestGpu && <Zap size={13} color="#635bff" />}
+                        {r.gpu === comparison.fastestGpu && <Zap size={13} color="var(--accent)" />}
                         {r.gpu === comparison.bestValueGpu && (
-                          <DollarSign size={13} color="#1a9d6b" />
+                          <DollarSign size={13} color="var(--green)" />
                         )}
                       </span>
                       <div className="bartrack">

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
-import { Toaster } from "sonner";
+import { ThemeProvider, ThemedToaster } from "@/components/theme";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
@@ -16,17 +16,25 @@ export const metadata: Metadata = {
     "Write GPU kernels in the browser and run the same kernel across T4, A100, B200 and more — side by side, with trustworthy benchmarks and per-dollar comparison.",
 };
 
+// Apply the saved/system theme before paint to avoid a flash.
+const noFlash = `(function(){try{var t=localStorage.getItem('kp-theme');if(!t){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}})();`;
+
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${inter.variable} ${mono.variable}`}>
+    <html lang="en" className={`${inter.variable} ${mono.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: noFlash }} />
+      </head>
       <body>
-        <div className="bg-glow" aria-hidden />
-        {children}
-        <Toaster theme="light" position="bottom-right" richColors closeButton />
+        <ThemeProvider>
+          <div className="bg-glow" aria-hidden />
+          {children}
+          <ThemedToaster />
+        </ThemeProvider>
       </body>
     </html>
   );
