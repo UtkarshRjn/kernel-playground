@@ -138,6 +138,27 @@ footer {
   font-size: 13px;
   color: var(--accent-2);
 }
+.pg-langs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.pg-lang {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 16px;
+  font-size: 13px;
+  font-family: var(--mono);
+  cursor: pointer;
+}
+.pg-lang.active {
+  background: var(--panel);
+  color: var(--accent-2);
+  border-color: var(--accent-2);
+}
+
 .pg-editor {
   width: 100%;
   min-height: 320px;

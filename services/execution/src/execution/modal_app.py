@@ -71,6 +71,20 @@ if _MODAL_AVAILABLE:
         with tempfile.TemporaryDirectory() as d:
             return run_cuda(request, Path(d))
 
+    # Triton runs Python kernels; this image bundles torch + triton (no nvcc needed).
+    triton_image = (
+        modal.Image.debian_slim(python_version="3.11")
+        .pip_install("torch", "triton")
+        .add_local_python_source("execution")
+    )
+
+    @app.function(image=triton_image, gpu="T4", timeout=600)
+    def run_triton_remote(request: RunRequest) -> RunResult:  # pragma: no cover - on GPU
+        from .triton_runner import run_triton
+
+        with tempfile.TemporaryDirectory() as d:
+            return run_triton(request, Path(d))
+
     # CPU image for the HTTP endpoint; it only dispatches to the GPU function above.
     api_image = (
         modal.Image.debian_slim(python_version="3.11")
@@ -97,7 +111,12 @@ if _MODAL_AVAILABLE:
             if not token or authorization != f"Bearer {token}":
                 raise HTTPException(status_code=401, detail="unauthorized")
             request = request_from_json(payload)
-            fn = run_target_remote.with_options(gpu=MODAL_GPU[request.gpu])
+            runner = (
+                run_triton_remote
+                if request.language is KernelLanguage.TRITON
+                else run_target_remote
+            )
+            fn = runner.with_options(gpu=MODAL_GPU[request.gpu])
             return result_to_json(fn.remote(request))
 
         return api

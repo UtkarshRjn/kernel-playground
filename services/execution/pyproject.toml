@@ -36,10 +36,12 @@ select = ["E", "F", "I", "UP", "B"]
 python_version = "3.11"
 strict = true
 files = ["src"]
+# Example submissions are user-facing sample kernels (torch/triton), not library code.
+exclude = ['src/execution/examples/.*']
 
-# `modal` installs only in the GPU image; it's import-guarded everywhere else.
+# These install only in the GPU image; they're import-guarded everywhere else.
 [[tool.mypy.overrides]]
-module = ["modal", "modal.*", "fastapi", "fastapi.*"]
+module = ["modal", "modal.*", "fastapi", "fastapi.*", "torch", "torch.*", "triton", "triton.*"]
 ignore_missing_imports = true
 
 # modal_app.py is Modal-decorator glue, verified by running on Modal rather than by
