@@ -1,0 +1,100 @@
+// Kernel Playground — persistence model (Phase 1).
+//
+// This schema is the canonical target for storage. The Phase 1 API runs against an
+// in-memory store (src/server/store.ts) so the run pipeline works without infra; the
+// Prisma-backed repository that fulfils this schema lands in the infra step
+// (TODO(infra): wire DATABASE_URL + migrations + PrismaRepository).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         String      @id @default(cuid())
+  email      String      @unique
+  name       String?
+  createdAt  DateTime    @default(now())
+  workspaces Workspace[]
+  account    CreditAccount?
+}
+
+model Workspace {
+  id      String   @id @default(cuid())
+  name    String
+  owner   User     @relation(fields: [ownerId], references: [id])
+  ownerId String
+  kernels Kernel[]
+}
+
+model Kernel {
+  id          String          @id @default(cuid())
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id])
+  workspaceId String
+  name        String
+  language    String // "cuda" | "triton"
+  visibility  String          @default("private") // private | unlisted | public
+  createdAt   DateTime        @default(now())
+  versions    KernelVersion[]
+}
+
+model KernelVersion {
+  id        String   @id @default(cuid())
+  kernel    Kernel   @relation(fields: [kernelId], references: [id])
+  kernelId  String
+  // Source files stored inline for now; large projects move to object storage later.
+  files     Json
+  entryPoint String
+  createdAt DateTime @default(now())
+  runs      Run[]
+}
+
+model Run {
+  id              String        @id @default(cuid())
+  kernelVersion   KernelVersion @relation(fields: [kernelVersionId], references: [id])
+  kernelVersionId String
+  userId          String
+  type            String // "single" | "compare"
+  status          String        @default("queued")
+  createdAt       DateTime      @default(now())
+  targets         RunTarget[]
+}
+
+model RunTarget {
+  id          String  @id @default(cuid())
+  run         Run     @relation(fields: [runId], references: [id])
+  runId       String
+  gpu         String
+  status      String  @default("queued")
+  gpuSeconds  Float   @default(0)
+  metrics     Json?
+  stats       Json?
+  diagnostics String?
+
+  @@unique([runId, gpu])
+}
+
+// --- Billing / credits (§8). Ledger is the source of truth, not Stripe. ---
+
+model CreditAccount {
+  id      String      @id @default(cuid())
+  owner   User        @relation(fields: [ownerId], references: [id])
+  ownerId String      @unique
+  balance Int         @default(0)
+  txns    CreditTxn[]
+}
+
+model CreditTxn {
+  id        String        @id @default(cuid())
+  account   CreditAccount @relation(fields: [accountId], references: [id])
+  accountId String
+  kind      String // topup | hold | capture | release
+  amount    Int
+  holdId    String?
+  runId     String?
+  createdAt DateTime      @default(now())
+}
