@@ -42,6 +42,14 @@ files = ["src"]
 module = ["modal", "modal.*"]
 ignore_missing_imports = true
 
+# modal_app.py is Modal-decorator glue, verified by running on Modal rather than by
+# types. Its strictness depends on whether `modal` is installed (Any vs real types), so
+# relax the checks that flip between environments. The pure logic it calls stays strict.
+[[tool.mypy.overrides]]
+module = ["execution.modal_app"]
+disallow_untyped_decorators = false
+warn_unused_ignores = false
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
