@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import { Analytics } from "@/components/posthog";
 import { ThemeProvider, ThemedToaster } from "@/components/theme";
 import "./globals.css";
 
@@ -34,6 +35,7 @@ export default function RootLayout({
           <div className="bg-glow" aria-hidden />
           {children}
           <ThemedToaster />
+          <Analytics />
         </ThemeProvider>
       </body>
     </html>

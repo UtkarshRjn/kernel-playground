@@ -21,6 +21,18 @@ export interface CreditTxn {
   at: number;
 }
 
+/**
+ * Async credit-ledger seam. Implemented in-memory (dev/tests) and by a Postgres-backed
+ * ledger in the web app. Async so DB implementations can use transactions.
+ */
+export interface CreditLedger {
+  getBalance(): Promise<number>;
+  /** Reserve `amount` credits; rejects with InsufficientCreditsError if unaffordable. */
+  placeHold(amount: number): Promise<string>;
+  /** Capture actual usage, release the remainder. */
+  settleHold(holdId: string, capturedAmount: number): Promise<{ captured: number; released: number }>;
+}
+
 export class InsufficientCreditsError extends Error {
   constructor(
     readonly required: number,
@@ -37,7 +49,7 @@ interface Hold {
   settled: boolean;
 }
 
-export class InMemoryCreditLedger {
+export class InMemoryCreditLedger implements CreditLedger {
   private available: number;
   private readonly holds = new Map<string, Hold>();
   private readonly txns: CreditTxn[] = [];
@@ -51,6 +63,10 @@ export class InMemoryCreditLedger {
 
   /** Credits currently spendable (excludes amounts locked in active holds). */
   get balance(): number {
+    return this.available;
+  }
+
+  async getBalance(): Promise<number> {
     return this.available;
   }
 
@@ -72,7 +88,7 @@ export class InMemoryCreditLedger {
   }
 
   /** Reserve `amount` credits. Throws if the available balance can't cover it. */
-  placeHold(amount: number): string {
+  async placeHold(amount: number): Promise<string> {
     if (amount < 0) throw new Error("hold amount must be >= 0");
     if (amount > this.available) throw new InsufficientCreditsError(amount, this.available);
     const id = `hold_${++this.seq}`;
@@ -88,7 +104,10 @@ export class InMemoryCreditLedger {
    * is clamped to the held amount — holds are sized worst-case, so this should be a
    * no-op clamp in practice, but it keeps the invariant total-conserving.
    */
-  settleHold(holdId: string, capturedAmount: number): { captured: number; released: number } {
+  async settleHold(
+    holdId: string,
+    capturedAmount: number,
+  ): Promise<{ captured: number; released: number }> {
     const hold = this.holds.get(holdId);
     if (!hold) throw new Error(`unknown hold: ${holdId}`);
     if (hold.settled) throw new Error(`hold already settled: ${holdId}`);

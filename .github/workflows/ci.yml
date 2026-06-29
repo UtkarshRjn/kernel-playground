@@ -9,6 +9,11 @@ jobs:
   web:
     name: Web, shared & core (TypeScript)
     runs-on: ubuntu-latest
+    # Dummy values so `next build` / prisma generate succeed in CI. Real values live
+    # in the Vercel project env.
+    env:
+      DATABASE_URL: "postgresql://user:pass@localhost:5432/db"
+      AUTH_SECRET: "ci-dummy-secret-not-used-at-runtime"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

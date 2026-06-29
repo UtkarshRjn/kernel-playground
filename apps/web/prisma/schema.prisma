@@ -1,100 +1,85 @@
-// Kernel Playground — persistence model (Phase 1).
-//
-// This schema is the canonical target for storage. The Phase 1 API runs against an
-// in-memory store (src/server/store.ts) so the run pipeline works without infra; the
-// Prisma-backed repository that fulfils this schema lands in the infra step
-// (TODO(infra): wire DATABASE_URL + migrations + PrismaRepository).
+// Kernel Playground — production persistence (Postgres).
+// Auth.js (NextAuth) adapter models + per-user credit ledger.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL") // for migrations on poolers (Neon/Supabase); optional
 }
+
+// --- Auth.js adapter models ---
 
 model User {
-  id         String      @id @default(cuid())
-  email      String      @unique
-  name       String?
-  createdAt  DateTime    @default(now())
-  workspaces Workspace[]
-  account    CreditAccount?
+  id            String         @id @default(cuid())
+  name          String?
+  email         String?        @unique
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime       @default(now())
+  accounts      Account[]
+  sessions      Session[]
+  creditAccount CreditAccount?
 }
 
-model Workspace {
-  id      String   @id @default(cuid())
-  name    String
-  owner   User     @relation(fields: [ownerId], references: [id])
-  ownerId String
-  kernels Kernel[]
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
 }
 
-model Kernel {
-  id          String          @id @default(cuid())
-  workspace   Workspace       @relation(fields: [workspaceId], references: [id])
-  workspaceId String
-  name        String
-  language    String // "cuda" | "triton"
-  visibility  String          @default("private") // private | unlisted | public
-  createdAt   DateTime        @default(now())
-  versions    KernelVersion[]
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-model KernelVersion {
-  id        String   @id @default(cuid())
-  kernel    Kernel   @relation(fields: [kernelId], references: [id])
-  kernelId  String
-  // Source files stored inline for now; large projects move to object storage later.
-  files     Json
-  entryPoint String
-  createdAt DateTime @default(now())
-  runs      Run[]
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
 }
 
-model Run {
-  id              String        @id @default(cuid())
-  kernelVersion   KernelVersion @relation(fields: [kernelVersionId], references: [id])
-  kernelVersionId String
-  userId          String
-  type            String // "single" | "compare"
-  status          String        @default("queued")
-  createdAt       DateTime      @default(now())
-  targets         RunTarget[]
-}
-
-model RunTarget {
-  id          String  @id @default(cuid())
-  run         Run     @relation(fields: [runId], references: [id])
-  runId       String
-  gpu         String
-  status      String  @default("queued")
-  gpuSeconds  Float   @default(0)
-  metrics     Json?
-  stats       Json?
-  diagnostics String?
-
-  @@unique([runId, gpu])
-}
-
-// --- Billing / credits (§8). Ledger is the source of truth, not Stripe. ---
+// --- Credits (per user). Ledger of holds/captures/releases is the source of truth. ---
 
 model CreditAccount {
-  id      String      @id @default(cuid())
-  owner   User        @relation(fields: [ownerId], references: [id])
-  ownerId String      @unique
-  balance Int         @default(0)
-  txns    CreditTxn[]
+  id        String      @id @default(cuid())
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String      @unique
+  balance   Int         @default(0)
+  createdAt DateTime    @default(now())
+  txns      CreditTxn[]
 }
 
 model CreditTxn {
   id        String        @id @default(cuid())
-  account   CreditAccount @relation(fields: [accountId], references: [id])
+  account   CreditAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
   accountId String
-  kind      String // topup | hold | capture | release
-  amount    Int
+  kind      String // grant | hold | capture | release
+  amount    Int // signed: + credits available, - debits
   holdId    String?
   runId     String?
   createdAt DateTime      @default(now())
+
+  @@index([accountId])
+  @@index([holdId])
 }
