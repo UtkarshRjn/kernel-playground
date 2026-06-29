@@ -1,15 +1,27 @@
-"""Modal app skeleton for GPU execution (Phase 0 stub).
+"""Modal app: compile + benchmark CUDA kernels on real GPUs (§2/§4/§11).
 
-Import-guarded so this module imports cleanly without ``modal`` installed (CI/tests).
-The real compile→run→benchmark body is filled in during Phase 1. This file pins down
-the GPU mapping and the function shape so the rest of the system can be built against it.
+Run a verification end to end:
+
+    modal run -m execution.modal_app
+
+The GPU function is import-guarded so the module imports cleanly without `modal`
+installed (CI/tests import contracts/cuda_runner, never this app).
 """
 
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
 from typing import Any
 
-from .contracts import GpuType
+from .contracts import (
+    BenchmarkConfig,
+    GpuType,
+    KernelFile,
+    KernelLanguage,
+    RunRequest,
+    RunResult,
+)
 
 # Map our canonical GpuType to Modal's GPU request strings.
 MODAL_GPU: dict[GpuType, str] = {
@@ -23,29 +35,70 @@ MODAL_GPU: dict[GpuType, str] = {
     GpuType.B200: "B200",
 }
 
+HARNESS_REMOTE = "/opt/kp/kp_main.cu"
+_HARNESS_LOCAL = Path(__file__).parent / "harness" / "kp_main.cu"
+
 try:
     import modal
 
     _MODAL_AVAILABLE = True
 except ImportError:  # pragma: no cover - modal absent in CI
-    modal = None
+    modal = None  # type: ignore[assignment]
     _MODAL_AVAILABLE = False
 
 
 def is_available() -> bool:
-    """Whether the Modal SDK is importable in this environment."""
     return _MODAL_AVAILABLE
 
 
-def build_app() -> tuple[Any, Any]:  # pragma: no cover - exercised where modal is installed
-    """Construct the Modal app + GPU image. Real run logic arrives in Phase 1."""
-    if not _MODAL_AVAILABLE:
-        raise RuntimeError("modal is not installed; install with extras: pip install '.[modal]'")
-
+if _MODAL_AVAILABLE:
     app = modal.App("kernel-playground-execution")
+
+    # CUDA toolkit (nvcc) image; our package source + the injected harness are baked in.
     image = (
-        modal.Image.debian_slim()
-        .apt_install("build-essential")
-        # CUDA toolkit + Triton land here in Phase 1.
+        modal.Image.from_registry(
+            "nvidia/cuda:12.4.1-devel-ubuntu22.04", add_python="3.11"
+        )
+        .env({"KP_HARNESS_MAIN": HARNESS_REMOTE})
+        .add_local_file(str(_HARNESS_LOCAL), HARNESS_REMOTE)
+        .add_local_python_source("execution")
     )
-    return app, image
+
+    @app.function(image=image, gpu="T4", timeout=600)
+    def run_target_remote(request: RunRequest) -> RunResult:  # pragma: no cover - on GPU
+        from .cuda_runner import run_cuda
+
+        with tempfile.TemporaryDirectory() as d:
+            return run_cuda(request, Path(d))
+
+    @app.local_entrypoint()
+    def main(gpu: str = "T4") -> None:  # pragma: no cover - manual verification
+        """Compile + benchmark the bundled vector-add example on the given GPU."""
+        kernel = (Path(__file__).parent / "examples" / "vector_add.cu").read_text()
+        request = RunRequest(
+            run_id="verify",
+            target_id=f"verify:{gpu}",
+            idempotency_key=f"verify:{gpu}",
+            language=KernelLanguage.CUDA,
+            gpu=GpuType(gpu),
+            files=[KernelFile(path="vector_add.cu", content=kernel)],
+            entry_point="kp_run",
+            benchmark=BenchmarkConfig(warmup_iters=10, timed_iters=50),
+        )
+        fn = run_target_remote.with_options(gpu=MODAL_GPU[GpuType(gpu)])
+        result: RunResult = fn.remote(request)
+        print(f"status={result.status} gpu={result.gpu} gpu_seconds={result.gpu_seconds:.2f}")
+        if result.stats:
+            s = result.stats
+            print(
+                f"median={s.median_ms:.4f}ms p95={s.p95_ms:.4f}ms "
+                f"min={s.min_ms:.4f}ms stddev={s.stddev_ms:.4f}ms over {s.iters} iters"
+            )
+        if result.diagnostics:
+            print("diagnostics:\n", result.diagnostics)
+
+
+def build_image() -> Any:  # pragma: no cover - convenience for external callers
+    if not _MODAL_AVAILABLE:
+        raise RuntimeError("modal is not installed; pip install '.[modal]'")
+    return image
