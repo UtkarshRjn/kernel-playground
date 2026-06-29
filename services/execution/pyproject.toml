@@ -39,7 +39,7 @@ files = ["src"]
 
 # `modal` installs only in the GPU image; it's import-guarded everywhere else.
 [[tool.mypy.overrides]]
-module = ["modal", "modal.*"]
+module = ["modal", "modal.*", "fastapi", "fastapi.*"]
 ignore_missing_imports = true
 
 # modal_app.py is Modal-decorator glue, verified by running on Modal rather than by
