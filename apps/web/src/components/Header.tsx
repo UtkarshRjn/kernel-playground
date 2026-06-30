@@ -12,9 +12,6 @@ export function Header({ right }: { right?: ReactNode }) {
           Kernel Playground
         </a>
         <nav className="nav">
-          <a className="link" href="/playground">
-            Playground
-          </a>
           <a
             className="link"
             href="https://github.com/UtkarshRjn/kernel-playground"
