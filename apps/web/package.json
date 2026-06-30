@@ -27,7 +27,7 @@
     "@uiw/react-codemirror": "^4.23.7",
     "framer-motion": "^11.15.0",
     "lucide-react": "^0.469.0",
-    "next": "15.1.6",
+    "next": "15.5.19",
     "next-auth": "5.0.0-beta.25",
     "posthog-js": "^1.205.0",
     "react": "19.0.0",
