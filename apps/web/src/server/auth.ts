@@ -2,10 +2,8 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import NextAuth from "next-auth";
 import GitHub from "next-auth/providers/github";
 import Google from "next-auth/providers/google";
+import { STARTER_CREDITS } from "./credits-config";
 import { prisma } from "./db";
-
-/** Credits granted to each new account (§8 free tier). */
-export const STARTER_CREDITS = 1000;
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),

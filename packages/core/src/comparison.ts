@@ -26,12 +26,15 @@ export interface Comparison {
   bestValueGpu: GpuType | null;
 }
 
+/** Minimal target shape needed to build a comparison (full RunResult or a poll view). */
+export type ComparisonInput = Pick<RunResult, "gpu" | "status" | "gpuSeconds" | "stats">;
+
 /**
  * Turn raw per-GPU results into a ranked comparison. Only successful targets with
  * timing stats participate in the fastest / best-value rankings; failed targets still
  * appear as rows so the user sees what broke.
  */
-export function buildComparison(targets: RunResult[]): Comparison {
+export function buildComparison(targets: ComparisonInput[]): Comparison {
   const successful = targets.filter((t) => t.stats !== null);
   const slowestMedian = successful.reduce(
     (max, t) => Math.max(max, t.stats!.medianMs),

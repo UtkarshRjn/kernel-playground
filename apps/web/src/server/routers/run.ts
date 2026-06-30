@@ -3,7 +3,6 @@ import {
   HttpModalProvider,
   InsufficientCreditsError,
   MockExecutionProvider,
-  orchestrateRun,
   type KernelSubmission,
 } from "@kp/core";
 import {
@@ -14,9 +13,11 @@ import {
   type RunRequest,
 } from "@kp/shared";
 import { TRPCError } from "@trpc/server";
+import { after } from "next/server";
 import { z } from "zod";
-import { prisma } from "../db";
 import { getOrCreateAccountId, PrismaCreditLedger } from "../credit-ledger";
+import { prisma } from "../db";
+import { getRunStatus, processRun, submitRun } from "../runs";
 import { protectedProcedure, router } from "../trpc";
 
 // Real GPUs when the Modal endpoint is configured; deterministic mock otherwise.
@@ -41,7 +42,7 @@ export const runRouter = router({
     return { balance: await ledger.getBalance() };
   }),
 
-  /** Free, GPU-free compile/syntax check — the "Test" step. */
+  /** Free, GPU-free compile/syntax check — the "Test" step (synchronous; it's fast). */
   test: protectedProcedure
     .input(z.object({ language: KernelLanguage, code: z.string().min(1) }))
     .mutation(async ({ input }) => {
@@ -50,7 +51,7 @@ export const runRouter = router({
         targetId: "test",
         idempotencyKey: randomUUID(),
         language: input.language,
-        gpu: "T4", // placeholder; the compile check never touches a real device
+        gpu: "T4",
         files: [fileFor(input.language, input.code)],
         entryPoint: "kp_run",
         compilerFlags: [],
@@ -66,7 +67,10 @@ export const runRouter = router({
       }
     }),
 
-  /** Benchmark the kernel across the selected GPUs (charges credits). */
+  /**
+   * Enqueue a benchmark run and return its id immediately. The GPU work runs in the
+   * background (via `after`), so the request isn't held open. Poll `run.status`.
+   */
   submit: protectedProcedure
     .input(
       z.object({
@@ -87,8 +91,10 @@ export const runRouter = router({
         gpus: input.gpus,
         benchmark: input.benchmark ?? BenchmarkConfig.parse({}),
       };
+
+      let job: { runId: string; holdId: string };
       try {
-        return await orchestrateRun(submission, provider, ledger);
+        job = await submitRun({ userId: ctx.userId, submission, ledger });
       } catch (err) {
         if (err instanceof InsufficientCreditsError) {
           throw new TRPCError({
@@ -101,5 +107,19 @@ export const runRouter = router({
           message: err instanceof Error ? err.message : String(err),
         });
       }
+
+      // Process after the response is flushed — the client polls run.status.
+      after(() => processRun({ runId: job.runId, holdId: job.holdId, submission, provider, ledger }));
+
+      return { runId: job.runId };
+    }),
+
+  /** Poll a run's progress + per-GPU results. */
+  status: protectedProcedure
+    .input(z.object({ runId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const view = await getRunStatus(input.runId, ctx.userId);
+      if (!view) throw new TRPCError({ code: "NOT_FOUND", message: "run not found" });
+      return view;
     }),
 });

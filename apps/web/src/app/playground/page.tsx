@@ -5,6 +5,7 @@ import { type GpuType, type KernelLanguage } from "@kp/shared";
 import { motion } from "framer-motion";
 import {
   BarChart3,
+  Check,
   Copy,
   DollarSign,
   FileCode2,
@@ -99,6 +100,9 @@ export default function Playground() {
   const [submitting, setSubmitting] = useState(false);
   const [tested, setTested] = useState<"pass" | "fail" | null>(null);
   const [comparison, setComparison] = useState<Comparison | null>(null);
+  const [liveTargets, setLiveTargets] = useState<
+    Awaited<ReturnType<typeof trpc.run.status.query>>["targets"] | null
+  >(null);
   const [credits, setCredits] = useState<number | null>(null);
   const [con, setCon] = useState<ConState>({
     tone: "idle",
@@ -188,29 +192,47 @@ export default function Playground() {
   async function submit() {
     setSubmitting(true);
     setComparison(null);
-    setCon({ tone: "busy", label: "Submitting", title: `Running on ${selected.size} GPUs…` });
+    setLiveTargets(null);
+    setCon({ tone: "busy", label: "Submitting", title: `Queuing on ${selected.size} GPUs…` });
     try {
-      const report = await trpc.run.submit.mutate({ language, code, gpus: [...selected] });
+      // Enqueue — returns immediately with a run id; the GPU work runs in the background.
+      const { runId } = await trpc.run.submit.mutate({ language, code, gpus: [...selected] });
+      track("kernel_submitted", { language, gpus: [...selected] });
+
+      const terminal = new Set(["succeeded", "partial", "error"]);
+      let view: Awaited<ReturnType<typeof trpc.run.status.query>> | null = null;
+      for (let i = 0; i < 160; i++) {
+        view = await trpc.run.status.query({ runId });
+        setLiveTargets(view.targets);
+        const done = view.targets.filter((t) => t.status !== "queued" && t.status !== "running").length;
+        setCon({
+          tone: "busy",
+          label: "Running",
+          title: `Benchmarking… ${done}/${view.targets.length} GPUs done`,
+        });
+        if (terminal.has(view.status)) break;
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      if (!view || !terminal.has(view.status)) throw new Error("run timed out — please retry");
+
+      setComparison(buildComparison(view.targets));
       await refreshCredits();
-      setComparison(buildComparison(report.targets));
-      const ok = report.targets.filter((t) => t.status === "succeeded").length;
-      track("kernel_submitted", { language, gpus: [...selected], ok });
-      const failed = report.targets.filter((t) => t.status !== "succeeded");
+      const ok = view.targets.filter((t) => t.status === "succeeded").length;
+      const failed = view.targets.filter((t) => t.status !== "succeeded");
       setCon({
         tone: failed.length ? "fail" : "pass",
         label: failed.length ? "Partial" : "Submitted",
-        title: `Ran on ${ok}/${report.targets.length} GPUs · ${report.creditsCharged} credits`,
-        detail: failed.length
-          ? failed.map((t) => `${t.gpu}: ${t.status}`).join("\n")
-          : undefined,
+        title: `Ran on ${ok}/${view.targets.length} GPUs · ${view.creditsCharged} credits`,
+        detail: failed.length ? failed.map((t) => `${t.gpu}: ${t.status}`).join("\n") : undefined,
       });
-      toast.success(`Submitted · ${report.creditsCharged} credits`);
+      toast.success(`Submitted · ${view.creditsCharged} credits`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setCon({ tone: "fail", label: "Error", title: msg });
       toast.error(msg);
     } finally {
       setSubmitting(false);
+      setLiveTargets(null);
     }
   }
 
@@ -359,13 +381,31 @@ export default function Playground() {
         <section className="results">
           {submitting && (
             <div className="bars">
-              {[...selected].map((g) => (
-                <div className="barrow" key={g}>
-                  <span className="glabel">{g}</span>
-                  <div className="skrow" />
-                  <span className="btime">…</span>
-                </div>
-              ))}
+              {[...selected].map((g) => {
+                const t = liveTargets?.find((x) => x.gpu === g);
+                const done = t && t.status !== "queued" && t.status !== "running";
+                const ms = t?.stats?.medianMs ?? null;
+                return (
+                  <div className="barrow" key={g}>
+                    <span className="glabel">
+                      {g} {done && t?.status === "succeeded" && <Check size={13} color="var(--green)" />}
+                    </span>
+                    {done ? (
+                      <div className="bartrack">
+                        <div
+                          className={`barfill${t?.status !== "succeeded" ? " failed" : ""}`}
+                          style={{ width: t?.status === "succeeded" ? "100%" : "100%" }}
+                        />
+                      </div>
+                    ) : (
+                      <div className="skrow" />
+                    )}
+                    <span className="btime">
+                      {done ? (ms !== null ? `${ms.toFixed(4)} ms` : t?.status) : "…"}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )}
 

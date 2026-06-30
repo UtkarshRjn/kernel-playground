@@ -83,3 +83,34 @@ model CreditTxn {
   @@index([accountId])
   @@index([holdId])
 }
+
+// --- Async run jobs (submit returns immediately; client polls run.status) ---
+
+model Run {
+  id             String      @id @default(cuid())
+  userId         String
+  status         String      @default("queued") // queued | running | succeeded | partial | error
+  language       String
+  holdId         String?
+  creditsCharged Int         @default(0)
+  costUsd        Float       @default(0)
+  error          String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  targets        RunTarget[]
+
+  @@index([userId])
+}
+
+model RunTarget {
+  id          String   @id @default(cuid())
+  run         Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  runId       String
+  gpu         String
+  status      String   @default("queued") // queued | running | succeeded | compile_error | runtime_error | timeout
+  gpuSeconds  Float    @default(0)
+  stats       Json?
+  diagnostics String?
+
+  @@index([runId])
+}

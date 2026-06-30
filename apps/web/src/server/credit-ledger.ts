@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { type CreditLedger, InsufficientCreditsError } from "@kp/core";
 import type { PrismaClient } from "@prisma/client";
 import { prisma } from "./db";
-import { STARTER_CREDITS } from "./auth";
+import { STARTER_CREDITS } from "./credits-config";
 
 /** Postgres-backed credit ledger (hold/settle in transactions). */
 export class PrismaCreditLedger implements CreditLedger {
