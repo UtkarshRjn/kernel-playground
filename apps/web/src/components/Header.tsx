@@ -2,6 +2,7 @@ import { Github } from "lucide-react";
 import type { ReactNode } from "react";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./theme";
+import { UserMenu } from "./UserMenu";
 
 export function Header({ right }: { right?: ReactNode }) {
   return (
@@ -22,6 +23,7 @@ export function Header({ right }: { right?: ReactNode }) {
           </a>
           <ThemeToggle />
           {right}
+          <UserMenu />
         </nav>
       </div>
     </header>

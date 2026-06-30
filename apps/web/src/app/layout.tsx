@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import { AuthProvider } from "@/components/auth-provider";
 import { Analytics } from "@/components/posthog";
 import { ThemeProvider, ThemedToaster } from "@/components/theme";
 import "./globals.css";
@@ -31,12 +32,14 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: noFlash }} />
       </head>
       <body>
-        <ThemeProvider>
-          <div className="bg-glow" aria-hidden />
-          {children}
-          <ThemedToaster />
-          <Analytics />
-        </ThemeProvider>
+        <AuthProvider>
+          <ThemeProvider>
+            <div className="bg-glow" aria-hidden />
+            {children}
+            <ThemedToaster />
+            <Analytics />
+          </ThemeProvider>
+        </AuthProvider>
       </body>
     </html>
   );
