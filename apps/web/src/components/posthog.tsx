@@ -1,5 +1,6 @@
 "use client";
 
+import { useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import posthog from "posthog-js";
 import { useEffect } from "react";
@@ -18,19 +19,40 @@ function ensureInit() {
   initialized = true;
 }
 
-/** Initializes PostHog (if configured) and sends a pageview on each route change. */
+/** Initializes PostHog, sends pageviews, and identifies the signed-in user. */
 export function Analytics() {
   const pathname = usePathname();
+  const { data: session } = useSession();
+
   useEffect(() => {
     ensureInit();
   }, []);
+
   useEffect(() => {
     if (initialized) posthog.capture("$pageview", { path: pathname });
   }, [pathname]);
+
+  // Tie events to the signed-in user (and start a person profile).
+  useEffect(() => {
+    if (!initialized) return;
+    const user = session?.user;
+    if (user?.id) {
+      posthog.identify(user.id, {
+        email: user.email ?? undefined,
+        name: user.name ?? undefined,
+      });
+    }
+  }, [session?.user?.id, session?.user?.email, session?.user?.name]);
+
   return null;
 }
 
 /** Capture a product event (no-op when PostHog isn't configured). */
 export function track(event: string, props?: Record<string, unknown>) {
   if (KEY && typeof window !== "undefined") posthog.capture(event, props);
+}
+
+/** Clear the identified person (call on sign-out). */
+export function resetIdentity() {
+  if (KEY && typeof window !== "undefined") posthog.reset();
 }

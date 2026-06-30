@@ -3,6 +3,7 @@
 import { LogOut } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 import { useState } from "react";
+import { resetIdentity } from "./posthog";
 
 function initialsOf(name?: string | null, email?: string | null): string {
   const base = (name || email || "?").trim();
@@ -41,7 +42,13 @@ export function UserMenu() {
               {user.name && <div className="usermenu-name">{user.name}</div>}
               {user.email && <div className="usermenu-email">{user.email}</div>}
             </div>
-            <button className="usermenu-signout" onClick={() => signOut({ callbackUrl: "/" })}>
+            <button
+              className="usermenu-signout"
+              onClick={() => {
+                resetIdentity();
+                void signOut({ callbackUrl: "/" });
+              }}
+            >
               <LogOut size={14} /> Sign out
             </button>
           </div>
