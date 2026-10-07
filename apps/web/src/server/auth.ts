@@ -1,8 +1,10 @@
 import { PrismaAdapter } from "@auth/prisma-adapter";
+import { decideStarterCredits } from "@kp/core";
 import NextAuth from "next-auth";
 import GitHub from "next-auth/providers/github";
 import Google from "next-auth/providers/google";
-import { STARTER_CREDITS } from "./credits-config";
+import { ensureCreditAccount } from "./credit-ledger";
+import { STARTER_CREDIT_CONFIG } from "./credits-config";
 import { prisma } from "./db";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -17,16 +19,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
   events: {
-    // Give every new user a starter credit balance.
-    async createUser({ user }) {
-      if (!user.id) return;
-      await prisma.creditAccount.create({
-        data: {
-          userId: user.id,
-          balance: STARTER_CREDITS,
-          txns: { create: { kind: "grant", amount: STARTER_CREDITS } },
-        },
-      });
+    // Give new users a starter credit balance if their OAuth profile passes the
+    // anti-farming checks. No-op once the user has a credit account.
+    async signIn({ user, account, profile }) {
+      if (!user.id || !account) return;
+      const decision = decideStarterCredits(account.provider, profile, STARTER_CREDIT_CONFIG);
+      try {
+        await ensureCreditAccount(user.id, decision.credits);
+      } catch (err) {
+        // Never fail sign-in over credits; the run router lazily creates a 0-credit account.
+        console.error("starter credit grant failed", { userId: user.id, err });
+      }
     },
   },
 });
