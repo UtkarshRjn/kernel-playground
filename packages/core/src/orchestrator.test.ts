@@ -5,6 +5,7 @@ import type {
   RunRequest,
   RunResult,
 } from "@kp/shared";
+import { captureCredits, MIN_CREDITS_PER_TARGET } from "./cost.js";
 import { InMemoryCreditLedger, InsufficientCreditsError } from "./ledger.js";
 import { MockExecutionProvider } from "./mock-provider.js";
 import { orchestrateRun, type KernelSubmission } from "./orchestrator.js";
@@ -74,5 +75,22 @@ describe("orchestrateRun", () => {
     expect(t4?.status).toBe("succeeded");
     expect(ledger.heldTotal).toBe(0);
     expect(report.balanceAfter).toBe(10_000 - report.creditsCharged);
+    expect(report.creditsCharged).toBe(captureCredits("T4", t4!.gpuSeconds));
+  });
+
+  it("still charges compile errors for time used (at least the per-target minimum)", async () => {
+    const failing: ExecutionProvider = {
+      name: "failing",
+      async run(req: RunRequest): Promise<RunResult> {
+        const ok = await new MockExecutionProvider().run(req);
+        return { ...ok, status: "compile_error", gpuSeconds: 0, stats: null };
+      },
+      async cancel() {},
+    };
+    const ledger = new InMemoryCreditLedger(10_000);
+    const report = await orchestrateRun(submission(["H100"]), failing, ledger);
+    expect(report.creditsCharged).toBe(captureCredits("H100", 0));
+    expect(report.creditsCharged).toBeGreaterThanOrEqual(MIN_CREDITS_PER_TARGET);
+    expect(report.costUsd).toBe(0);
   });
 });

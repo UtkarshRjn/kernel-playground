@@ -7,7 +7,13 @@ import type {
   RunRequest,
   RunResult,
 } from "@kp/shared";
-import { captureCredits, costUsd, estimateHoldCredits } from "./cost.js";
+import {
+  type BillingConfig,
+  captureCredits,
+  costUsd,
+  DEFAULT_BILLING_CONFIG,
+  estimateHoldCredits,
+} from "./cost.js";
 import type { CreditLedger } from "./ledger.js";
 
 /** A user's request to run one kernel across one or more GPUs (§3 fan-out). */
@@ -24,7 +30,7 @@ export interface KernelSubmission {
 export interface RunReport {
   runId: string;
   targets: RunResult[];
-  /** Total real cloud cost in USD across all targets. */
+  /** Total real cloud GPU cost in USD across all targets (no overhead or margin). */
   costUsd: number;
   /** Credits actually captured (charged) for this run. */
   creditsCharged: number;
@@ -44,18 +50,19 @@ function targetId(runId: string, gpu: GpuType): string {
  *   2. run each target on the provider (failures are reported, not thrown)
  *   3. capture credits from actual GPU-seconds, release the unused remainder
  *
- * A failed target still captures whatever GPU-seconds it consumed before failing.
- * Provider infra errors capture nothing for that target.
+ * A failed target still captures whatever GPU-seconds it consumed before failing, plus
+ * startup overhead and the per-target minimum. Provider infra errors capture nothing.
  */
 export async function orchestrateRun(
   submission: KernelSubmission,
   provider: ExecutionProvider,
   ledger: CreditLedger,
+  billing: BillingConfig = DEFAULT_BILLING_CONFIG,
 ): Promise<RunReport> {
   if (submission.gpus.length === 0) throw new Error("at least one GPU is required");
 
   const holdCredits = submission.gpus.reduce(
-    (sum, gpu) => sum + estimateHoldCredits(gpu, submission.benchmark.timeoutSec),
+    (sum, gpu) => sum + estimateHoldCredits(gpu, submission.benchmark.timeoutSec, billing),
     0,
   );
   const holdId = await ledger.placeHold(holdCredits);
@@ -84,7 +91,7 @@ export async function orchestrateRun(
       const result = outcome.value;
       targets.push(result);
       totalCostUsd += costUsd(result.gpu, result.gpuSeconds);
-      captured += captureCredits(result.gpu, result.gpuSeconds);
+      captured += captureCredits(result.gpu, result.gpuSeconds, billing);
     } else {
       // Infra/service failure (network, 5xx, billing limit): no usage to charge.
       // Surface the real reason so the console can explain it.
@@ -105,13 +112,13 @@ export async function orchestrateRun(
     }
   });
 
-  await ledger.settleHold(holdId, captured);
+  const settlement = await ledger.settleHold(holdId, captured);
 
   return {
     runId: submission.runId,
     targets,
     costUsd: totalCostUsd,
-    creditsCharged: captured,
+    creditsCharged: settlement.captured,
     balanceAfter: await ledger.getBalance(),
   };
 }

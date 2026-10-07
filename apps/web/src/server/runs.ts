@@ -7,6 +7,7 @@ import {
 } from "@kp/core";
 import type { ExecutionProvider, RunRequest, RunResult, RunStatus } from "@kp/shared";
 import { Prisma } from "@prisma/client";
+import { billingConfig } from "./billing-config";
 import { prisma } from "./db";
 
 /**
@@ -21,7 +22,7 @@ export async function submitRun(params: {
 }): Promise<{ runId: string; holdId: string }> {
   const { userId, submission, ledger } = params;
   const holdCredits = submission.gpus.reduce(
-    (sum, gpu) => sum + estimateHoldCredits(gpu, submission.benchmark.timeoutSec),
+    (sum, gpu) => sum + estimateHoldCredits(gpu, submission.benchmark.timeoutSec, billingConfig),
     0,
   );
   const holdId = await ledger.placeHold(holdCredits); // throws if insufficient
@@ -105,7 +106,7 @@ async function runTargets(params: {
         return;
       }
       if (result.status !== "succeeded") anyFailed = true;
-      captured += captureCredits(req.gpu, result.gpuSeconds);
+      captured += captureCredits(req.gpu, result.gpuSeconds, billingConfig);
       totalCost += costUsd(req.gpu, result.gpuSeconds);
       await prisma.runTarget.updateMany({
         where: { runId, gpu: req.gpu },
@@ -119,12 +120,12 @@ async function runTargets(params: {
     }),
   );
 
-  await ledger.settleHold(holdId, captured);
+  const settlement = await ledger.settleHold(holdId, captured);
   await prisma.run.update({
     where: { id: runId },
     data: {
       status: anyFailed ? "partial" : "succeeded",
-      creditsCharged: captured,
+      creditsCharged: settlement.captured,
       costUsd: totalCost,
     },
   });
