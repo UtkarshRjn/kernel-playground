@@ -2,12 +2,12 @@ import type { GpuSpec } from "./gpu.js";
 import { GpuType } from "./gpu.js";
 
 /**
- * Static GPU catalog: hardware specs + indicative cloud cost (USD / GPU-second).
+ * Static GPU catalog: hardware specs + cloud cost (USD / GPU-second).
  *
- * Prices are representative on-demand rates and the SINGLE SOURCE used for cost
- * estimation, credit settlement (§8) and perf/$ comparison (§3). They should be
- * sourced from the active cloud provider's live pricing in production; treat these
- * as seed defaults. `tier` gates free vs paid access.
+ * `pricePerSec` is Modal's list GPU price (https://modal.com/pricing, fetched
+ * 2026-10-07; base region, preemptible). It is the true provider cost used for
+ * `Run.costUsd` and perf/$ comparison (§3); credit charges add overhead + margin on
+ * top (see `@kp/core` cost.ts). `tier` gates free vs paid access.
  */
 export const GPU_CATALOG: Record<GpuType, GpuSpec> = {
   T4: {
@@ -57,7 +57,7 @@ export const GPU_CATALOG: Record<GpuType, GpuSpec> = {
     memoryGb: 80,
     memoryBandwidthGbs: 2039,
     fp16Tflops: 312,
-    pricePerSec: 0.000639,
+    pricePerSec: 0.000694,
     tier: "standard",
   },
   H100: {
@@ -87,7 +87,7 @@ export const GPU_CATALOG: Record<GpuType, GpuSpec> = {
     memoryGb: 192,
     memoryBandwidthGbs: 8000,
     fp16Tflops: 2250,
-    pricePerSec: 0.001722,
+    pricePerSec: 0.001736,
     tier: "premium",
   },
 };
