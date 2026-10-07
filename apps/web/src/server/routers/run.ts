@@ -1,10 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  HttpModalProvider,
-  InsufficientCreditsError,
-  MockExecutionProvider,
-  type KernelSubmission,
-} from "@kp/core";
+import { InsufficientCreditsError, selectExecutionProvider, type KernelSubmission } from "@kp/core";
 import {
   BenchmarkConfig,
   GpuType,
@@ -20,14 +15,21 @@ import { prisma } from "../db";
 import { getRunStatus, processRun, submitRun } from "../runs";
 import { protectedProcedure, router } from "../trpc";
 
-// Real GPUs when the Modal endpoint is configured; deterministic mock otherwise.
-function makeProvider(): ExecutionProvider {
-  const url = process.env.EXECUTION_API_URL;
-  const token = process.env.EXECUTION_TOKEN;
-  if (url && token) return new HttpModalProvider(url, token);
-  return new MockExecutionProvider();
+// Resolved on first request, not at module load: `next build` runs with NODE_ENV=production
+// and no EXECUTION_* vars, and selection throws in production when they're missing.
+let cachedProvider: ExecutionProvider | undefined;
+function getProvider(): ExecutionProvider {
+  cachedProvider ??= selectExecutionProvider(process.env);
+  return cachedProvider;
 }
-const provider = makeProvider();
+
+function internalError(op: string, err: unknown): TRPCError {
+  console.error(`[run.${op}]`, err);
+  return new TRPCError({
+    code: "INTERNAL_SERVER_ERROR",
+    message: "Something went wrong on our side. Please try again.",
+  });
+}
 
 const fileFor = (language: KernelLanguage, code: string) => ({
   path: language === "cuda" ? "kernel.cu" : "kernel.py",
@@ -58,12 +60,9 @@ export const runRouter = router({
         benchmark: BenchmarkConfig.parse({}),
       };
       try {
-        return await provider.compileCheck(request);
+        return await getProvider().compileCheck(request);
       } catch (err) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: err instanceof Error ? err.message : String(err),
-        });
+        throw internalError("test", err);
       }
     }),
 
@@ -92,8 +91,10 @@ export const runRouter = router({
         benchmark: input.benchmark ?? BenchmarkConfig.parse({}),
       };
 
+      let provider: ExecutionProvider;
       let job: { runId: string; holdId: string };
       try {
+        provider = getProvider(); // before placing a hold, so misconfig doesn't strand credits
         job = await submitRun({ userId: ctx.userId, submission, ledger });
       } catch (err) {
         if (err instanceof InsufficientCreditsError) {
@@ -102,16 +103,13 @@ export const runRouter = router({
             message: `Not enough credits: need ${err.required}, have ${err.available}`,
           });
         }
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: err instanceof Error ? err.message : String(err),
-        });
+        throw internalError("submit", err);
       }
 
       // Process after the response is flushed — the client polls run.status.
       after(() => processRun({ runId: job.runId, holdId: job.holdId, submission, provider, ledger }));
 
-      return { runId: job.runId };
+      return { runId: job.runId, backend: provider.name };
     }),
 
   /** Poll a run's progress + per-GPU results. */
