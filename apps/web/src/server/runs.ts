@@ -105,13 +105,12 @@ async function runTargets(params: {
         result = await provider.run(req);
       } catch (err) {
         anyFailed = true;
+        console.error(`[processRun] provider.run failed run=${runId} gpu=${req.gpu}`, err);
         await prisma.runTarget.updateMany({
           where: { runId, gpu: req.gpu },
           data: {
             status: "runtime_error",
-            diagnostics: truncateOutput(
-              `Execution service error — ${err instanceof Error ? err.message : String(err)}`,
-            ),
+            diagnostics: "Execution service error — please retry. No credits were charged for this GPU.",
           },
         });
         return;

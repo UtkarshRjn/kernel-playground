@@ -105,6 +105,7 @@ export default function Playground() {
   >(null);
   const [credits, setCredits] = useState<number | null>(null);
   const [allowedTiers, setAllowedTiers] = useState<GpuSpec["tier"][] | null>(null);
+  const [backend, setBackend] = useState<string | null>(null);
   const [con, setCon] = useState<ConState>({
     tone: "idle",
     label: "Ready",
@@ -205,7 +206,8 @@ export default function Playground() {
     setCon({ tone: "busy", label: "Submitting", title: `Queuing on ${selected.size} GPUs…` });
     try {
       // Enqueue — returns immediately with a run id; the GPU work runs in the background.
-      const { runId } = await trpc.run.submit.mutate({ language, code, gpus: [...selected] });
+      const { runId, backend } = await trpc.run.submit.mutate({ language, code, gpus: [...selected] });
+      setBackend(backend);
       track("kernel_submitted", { language, gpus: [...selected] });
 
       const terminal = new Set(["succeeded", "partial", "error"]);
@@ -435,6 +437,20 @@ export default function Playground() {
 
           {!submitting && comparison && (
             <>
+              {backend === "mock" && (
+                <span
+                  className="chip"
+                  style={{
+                    color: "var(--amber)",
+                    background: "var(--amber-soft)",
+                    borderColor: "var(--amber)",
+                    marginBottom: 12,
+                  }}
+                  title="No real GPU was used — these numbers come from the deterministic mock backend."
+                >
+                  Simulated results (mock backend)
+                </span>
+              )}
               <div className="winners">
                 <motion.div
                   className="winner fast"
