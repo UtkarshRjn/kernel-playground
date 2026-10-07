@@ -3,7 +3,10 @@ import {
   type CreditLedger,
   costUsd,
   estimateHoldCredits,
+  isRunStale,
   type KernelSubmission,
+  NON_TERMINAL_RUN_STATUSES,
+  NON_TERMINAL_TARGET_STATUSES,
 } from "@kp/core";
 import {
   type ExecutionProvider,
@@ -15,6 +18,7 @@ import {
 import { Prisma } from "@prisma/client";
 import { billingConfig } from "./billing-config";
 import { prisma } from "./db";
+import { staleRunThresholdMs, sweepRun } from "./stale-runs";
 
 /**
  * Create the run job: size + place the credit hold, persist the Run + per-GPU targets,
@@ -57,17 +61,18 @@ export async function processRun(params: {
   try {
     await runTargets({ runId, holdId, submission, provider, ledger });
   } catch (err) {
-    // Unexpected failure: release the hold and mark the run errored so it isn't stuck.
-    await ledger.settleHold(holdId, 0).catch(() => {});
-    await prisma.run
-      .update({
-        where: { id: runId },
+    // Unexpected failure: mark the run errored so it isn't stuck, and release the hold —
+    // unless someone else (the stale-run sweeper) already finalized it.
+    const claimed = await prisma.run
+      .updateMany({
+        where: { id: runId, status: { in: [...NON_TERMINAL_RUN_STATUSES] } },
         data: {
           status: "error",
           error: truncateOutput(err instanceof Error ? err.message : String(err)),
         },
       })
-      .catch(() => {});
+      .catch(() => ({ count: 0 }));
+    if (claimed.count > 0) await ledger.settleHold(holdId, 0).catch(() => {});
   }
 }
 
@@ -79,7 +84,11 @@ async function runTargets(params: {
   ledger: CreditLedger;
 }): Promise<void> {
   const { runId, holdId, submission, provider, ledger } = params;
-  await prisma.run.update({ where: { id: runId }, data: { status: "running" } });
+  const started = await prisma.run.updateMany({
+    where: { id: runId, status: "queued" },
+    data: { status: "running" },
+  });
+  if (started.count === 0) return; // already swept as stale; its hold was released
 
   const requests: RunRequest[] = submission.gpus.map((gpu) => ({
     runId,
@@ -107,7 +116,7 @@ async function runTargets(params: {
         anyFailed = true;
         console.error(`[processRun] provider.run failed run=${runId} gpu=${req.gpu}`, err);
         await prisma.runTarget.updateMany({
-          where: { runId, gpu: req.gpu },
+          where: { runId, gpu: req.gpu, status: { in: [...NON_TERMINAL_TARGET_STATUSES] } },
           data: {
             status: "runtime_error",
             diagnostics: "Execution service error — please retry. No credits were charged for this GPU.",
@@ -119,7 +128,7 @@ async function runTargets(params: {
       captured += captureCredits(req.gpu, result.gpuSeconds, billingConfig);
       totalCost += costUsd(req.gpu, result.gpuSeconds);
       await prisma.runTarget.updateMany({
-        where: { runId, gpu: req.gpu },
+        where: { runId, gpu: req.gpu, status: { in: [...NON_TERMINAL_TARGET_STATUSES] } },
         data: {
           status: result.status,
           gpuSeconds: result.gpuSeconds,
@@ -131,15 +140,25 @@ async function runTargets(params: {
     }),
   );
 
-  const settlement = await ledger.settleHold(holdId, captured);
-  await prisma.run.update({
-    where: { id: runId },
+  // Claim the run before settling: if the sweeper already errored it (and released the
+  // hold), settling again would throw / double-settle.
+  const finished = await prisma.run.updateMany({
+    where: { id: runId, status: "running" },
     data: {
       status: anyFailed ? "partial" : "succeeded",
-      creditsCharged: settlement.captured,
+      creditsCharged: captured,
       costUsd: totalCost,
     },
   });
+  if (finished.count === 0) return;
+  const settlement = await ledger.settleHold(holdId, captured);
+  if (settlement.captured !== captured) {
+    // The ledger caps captures at the hold; record what was actually charged.
+    await prisma.run.update({
+      where: { id: runId },
+      data: { creditsCharged: settlement.captured },
+    });
+  }
 }
 
 export interface RunStatusView {
@@ -149,13 +168,23 @@ export interface RunStatusView {
   targets: Array<Pick<RunResult, "gpu" | "status" | "gpuSeconds" | "stats" | "diagnostics">>;
 }
 
-/** Current state of a run for polling — scoped to the owning user. */
+/**
+ * Current state of a run for polling — scoped to the owning user. A run stuck past the
+ * staleness threshold is swept on the spot so the client sees a terminal state even if
+ * the cron sweeper hasn't run yet.
+ */
 export async function getRunStatus(runId: string, userId: string): Promise<RunStatusView | null> {
-  const run = await prisma.run.findFirst({
-    where: { id: runId, userId },
-    include: { targets: true },
-  });
+  const find = () =>
+    prisma.run.findFirst({ where: { id: runId, userId }, include: { targets: true } });
+  let run = await find();
   if (!run) return null;
+  const thresholdMs = staleRunThresholdMs();
+  if (isRunStale(run, new Date(), thresholdMs)) {
+    await sweepRun(run, thresholdMs).catch((err) => {
+      console.error(`[run.status] failed to sweep stale run ${runId}:`, err);
+    });
+    run = (await find()) ?? run;
+  }
   return {
     status: run.status,
     creditsCharged: run.creditsCharged,
