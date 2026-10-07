@@ -19,6 +19,7 @@ import { after } from "next/server";
 import { z } from "zod";
 import { getOrCreateAccountId, PrismaCreditLedger } from "../credit-ledger";
 import { prisma } from "../db";
+import { enforceSubmitLimits, enforceTestRateLimit } from "../rate-limit";
 import { getRunStatus, processRun, submitRun } from "../runs";
 import { getAllowedTiers } from "../tiers";
 import { protectedProcedure, router } from "../trpc";
@@ -53,7 +54,8 @@ export const runRouter = router({
   /** Free, GPU-free compile/syntax check — the "Test" step (synchronous; it's fast). */
   test: protectedProcedure
     .input(z.object({ language: KernelLanguage, code: z.string().min(1).max(MAX_FILE_CHARS) }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      await enforceTestRateLimit(ctx.userId);
       const request: RunRequest = {
         runId: randomUUID(),
         targetId: "test",
@@ -97,6 +99,7 @@ export const runRouter = router({
         });
       }
 
+      await enforceSubmitLimits(ctx.userId);
       const accountId = await getOrCreateAccountId(ctx.userId);
       const ledger = new PrismaCreditLedger(prisma, accountId);
       const submission: KernelSubmission = {
