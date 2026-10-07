@@ -1,7 +1,7 @@
 "use client";
 
 import { buildComparison, type Comparison } from "@kp/core";
-import { type GpuType, type KernelLanguage } from "@kp/shared";
+import { GPU_CATALOG, type GpuSpec, type GpuType, type KernelLanguage } from "@kp/shared";
 import { motion } from "framer-motion";
 import {
   BarChart3,
@@ -104,6 +104,7 @@ export default function Playground() {
     Awaited<ReturnType<typeof trpc.run.status.query>>["targets"] | null
   >(null);
   const [credits, setCredits] = useState<number | null>(null);
+  const [allowedTiers, setAllowedTiers] = useState<GpuSpec["tier"][] | null>(null);
   const [con, setCon] = useState<ConState>({
     tone: "idle",
     label: "Ready",
@@ -114,6 +115,14 @@ export default function Playground() {
     trpc.run.credits
       .query()
       .then((c) => setCredits(c.balance))
+      .catch(() => {});
+    trpc.run.tiers
+      .query()
+      .then(({ allowed }) => {
+        setAllowedTiers(allowed);
+        // Drop default selections the user can't run on.
+        setSelected((prev) => new Set([...prev].filter((g) => allowed.includes(GPU_CATALOG[g].tier))));
+      })
       .catch(() => {});
   }, []);
 
@@ -337,6 +346,7 @@ export default function Playground() {
           <div className="side">
             <GpuSelector
               selected={selected}
+              allowedTiers={allowedTiers}
               onToggle={toggle}
               onPreset={(gpus) => setSelected(new Set(gpus))}
             />

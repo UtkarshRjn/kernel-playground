@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  disallowedGpus,
   HttpModalProvider,
   InsufficientCreditsError,
   MockExecutionProvider,
@@ -18,6 +19,7 @@ import { z } from "zod";
 import { getOrCreateAccountId, PrismaCreditLedger } from "../credit-ledger";
 import { prisma } from "../db";
 import { getRunStatus, processRun, submitRun } from "../runs";
+import { getAllowedTiers } from "../tiers";
 import { protectedProcedure, router } from "../trpc";
 
 // Real GPUs when the Modal endpoint is configured; deterministic mock otherwise.
@@ -40,6 +42,11 @@ export const runRouter = router({
     const accountId = await getOrCreateAccountId(ctx.userId);
     const ledger = new PrismaCreditLedger(prisma, accountId);
     return { balance: await ledger.getBalance() };
+  }),
+
+  /** GPU tiers the signed-in user may submit to. */
+  tiers: protectedProcedure.query(async ({ ctx }) => {
+    return { allowed: await getAllowedTiers(ctx.userId) };
   }),
 
   /** Free, GPU-free compile/syntax check — the "Test" step (synchronous; it's fast). */
@@ -81,6 +88,14 @@ export const runRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const locked = disallowedGpus(input.gpus, await getAllowedTiers(ctx.userId));
+      if (locked.length) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: `Your plan doesn't include ${locked.join(", ")}. Deselect locked GPUs and retry.`,
+        });
+      }
+
       const accountId = await getOrCreateAccountId(ctx.userId);
       const ledger = new PrismaCreditLedger(prisma, accountId);
       const submission: KernelSubmission = {
