@@ -114,3 +114,13 @@ model RunTarget {
 
   @@index([runId])
 }
+
+// --- Fixed-window rate-limit counters (e.g. run.test, which isn't persisted as a Run) ---
+
+model RateLimitCounter {
+  key       String   @id // "<action>:<userId>:<window>:<windowIndex>", e.g. "test:u1:min:29000000"
+  count     Int      @default(0)
+  expiresAt DateTime // end of the window; expired rows are pruned opportunistically
+
+  @@index([expiresAt])
+}
