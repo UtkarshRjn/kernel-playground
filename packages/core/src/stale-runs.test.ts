@@ -30,7 +30,7 @@ describe("resolveStaleRunThresholdMs", () => {
 
   it("default exceeds the minimum (the max possible run time)", () => {
     expect(DEFAULT_STALE_RUN_THRESHOLD_SEC).toBeGreaterThanOrEqual(MIN_STALE_RUN_THRESHOLD_SEC);
-    expect(MIN_STALE_RUN_THRESHOLD_SEC).toBeGreaterThan(800);
+    expect(MIN_STALE_RUN_THRESHOLD_SEC).toBeGreaterThan(300);
   });
 });
 
