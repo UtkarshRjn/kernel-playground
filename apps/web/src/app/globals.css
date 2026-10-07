@@ -665,6 +665,12 @@ footer.site {
   border-color: var(--accent);
   color: var(--accent-600);
 }
+.preset:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  border-color: var(--border);
+  color: var(--muted);
+}
 
 .arch-group {
   padding: 14px 16px 0;
@@ -726,6 +732,21 @@ footer.site {
 .gpu.on .gpu-name .check {
   background: var(--accent);
   border-color: var(--accent);
+}
+.gpu.locked {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.gpu.locked:hover {
+  border-color: var(--border);
+  box-shadow: none;
+}
+.gpu.locked .gpu-name .check {
+  color: var(--muted);
+}
+.gpu-lock-hint {
+  margin-left: auto;
+  color: var(--muted);
 }
 .gpu-price {
   font-family: var(--font-mono-stack);

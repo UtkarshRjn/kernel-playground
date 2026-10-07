@@ -5,3 +5,4 @@ export * from "./ledger.js";
 export * from "./mock-provider.js";
 export * from "./orchestrator.js";
 export * from "./syntax-check.js";
+export * from "./tiers.js";
