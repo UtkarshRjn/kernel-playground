@@ -28,6 +28,45 @@ jobs:
       - run: pnpm -r typecheck
       - run: pnpm -r test
 
+  migrations:
+    name: Prisma migrations match schema
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: kp
+          POSTGRES_PASSWORD: kp
+          POSTGRES_DB: kp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: "postgresql://kp:kp@localhost:5432/kp"
+      DIRECT_URL: "postgresql://kp:kp@localhost:5432/kp"
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Apply every migration to an empty DB (same command prod runs on deploy)...
+      - run: pnpm exec prisma migrate deploy
+      # ...then fail (exit 2, printing the missing SQL) if the result differs from schema.prisma.
+      # Fix: `pnpm --filter @kp/web exec prisma migrate dev --name <change>` and commit the migration.
+      - run: pnpm run db:migrate:check
+
   execution:
     name: Execution backend (Python)
     runs-on: ubuntu-latest
