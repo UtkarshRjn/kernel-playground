@@ -12,12 +12,12 @@ export const NON_TERMINAL_TARGET_STATUSES = ["queued", "compiling", "running"] a
 
 /**
  * Lower bound for the threshold. Must exceed the longest a run can legitimately take,
- * which is capped by the tRPC route's `maxDuration` (800s) since processRun runs in
+ * which is capped by the tRPC route's `maxDuration` (300s) since processRun runs in
  * that same invocation via `after()`.
  */
-export const MIN_STALE_RUN_THRESHOLD_SEC = 840;
+export const MIN_STALE_RUN_THRESHOLD_SEC = 360;
 
-export const DEFAULT_STALE_RUN_THRESHOLD_SEC = 900;
+export const DEFAULT_STALE_RUN_THRESHOLD_SEC = 600;
 
 /**
  * Parse the configured threshold (seconds) into milliseconds. Missing/invalid values

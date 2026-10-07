@@ -39,8 +39,11 @@ export const BenchmarkConfig = z.object({
   timedIters: z.number().int().min(1).max(MAX_TIMED_ITERS).default(50),
   /** Flush the L2 cache between timed iterations to avoid optimistic numbers. */
   flushL2: z.boolean().default(true),
-  /** Hard ceiling per target; the sandbox kills runs that exceed it (§11). */
-  timeoutSec: z.number().int().min(1).max(300).default(60),
+  /**
+   * Hard ceiling per target; the sandbox kills runs that exceed it (§11). Capped so cold
+   * start + compile + run fits the web function's 300s maxDuration (Vercel Hobby).
+   */
+  timeoutSec: z.number().int().min(1).max(120).default(60),
 });
 export type BenchmarkConfig = z.infer<typeof BenchmarkConfig>;
 
