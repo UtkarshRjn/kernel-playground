@@ -6,6 +6,7 @@ export * from "./mock-provider.js";
 export * from "./orchestrator.js";
 export * from "./provider-select.js";
 export * from "./rate-limit.js";
+export * from "./spend.js";
 export * from "./stale-runs.js";
 export * from "./starter-credits.js";
 export * from "./syntax-check.js";
