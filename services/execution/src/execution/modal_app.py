@@ -54,6 +54,14 @@ def is_available() -> bool:
 if _MODAL_AVAILABLE:
     app = modal.App("kernel-playground-execution")
 
+    # Every function below runs untrusted user code (or compiles it), so it gets no
+    # secrets, no outbound network, and no access to other Modal resources/functions.
+    # Images are fully built at deploy time, so nothing needs the network at run time.
+    _SANDBOX: dict[str, Any] = {"block_network": True, "restrict_modal_access": True}
+    # Memory is (request, hard limit) in MiB; exceeding the limit OOM-kills the container.
+    _GPU_MEMORY = (1024, 16384)
+    _CPU_MEMORY = (512, 4096)
+
     # CUDA toolkit (nvcc) image; our package source + the injected harness are baked in.
     image = (
         modal.Image.from_registry(
@@ -64,7 +72,16 @@ if _MODAL_AVAILABLE:
         .add_local_python_source("execution")
     )
 
-    @app.function(image=image, gpu="T4", timeout=600)
+    # single_use_containers: user code executes here, so never reuse a container across
+    # users (a submission could leave a background process or patch the runner in-process).
+    @app.function(
+        image=image,
+        gpu="T4",
+        timeout=600,
+        memory=_GPU_MEMORY,
+        single_use_containers=True,
+        **_SANDBOX,
+    )
     def run_target_remote(request: RunRequest) -> RunResult:  # pragma: no cover - on GPU
         from .cuda_runner import run_cuda
 
@@ -78,15 +95,23 @@ if _MODAL_AVAILABLE:
         .add_local_python_source("execution")
     )
 
-    @app.function(image=triton_image, gpu="T4", timeout=600)
+    @app.function(
+        image=triton_image,
+        gpu="T4",
+        timeout=600,
+        memory=_GPU_MEMORY,
+        single_use_containers=True,
+        **_SANDBOX,
+    )
     def run_triton_remote(request: RunRequest) -> RunResult:  # pragma: no cover - on GPU
         from .triton_runner import run_triton
 
         with tempfile.TemporaryDirectory() as d:
             return run_triton(request, Path(d))
 
-    # CPU-only compile/syntax check (the cheap "Test" path) — no gpu= means CPU.
-    @app.function(image=image, timeout=180)
+    # CPU-only compile/syntax check (the cheap "Test" path) — no gpu= means CPU. It never
+    # executes user code, so warm containers are reused to keep "Test" fast.
+    @app.function(image=image, timeout=180, memory=_CPU_MEMORY, **_SANDBOX)
     def compile_check_remote(request: RunRequest) -> RunResult:  # pragma: no cover - on CPU
         from .checker import compile_check
 
@@ -111,6 +136,12 @@ if _MODAL_AVAILABLE:
 
         api = FastAPI(title="Kernel Playground execution")
 
+        def parse(payload: dict[str, Any]) -> RunRequest:
+            try:
+                return request_from_json(payload)
+            except (KeyError, TypeError, ValueError) as e:
+                raise HTTPException(status_code=422, detail=f"invalid request: {e}") from e
+
         @api.post("/bench")
         def bench(
             payload: dict[str, Any], authorization: str | None = Header(default=None)
@@ -118,7 +149,7 @@ if _MODAL_AVAILABLE:
             token = os.environ.get("KP_EXEC_TOKEN", "")
             if not token or authorization != f"Bearer {token}":
                 raise HTTPException(status_code=401, detail="unauthorized")
-            request = request_from_json(payload)
+            request = parse(payload)
             runner = (
                 run_triton_remote
                 if request.language is KernelLanguage.TRITON
@@ -132,7 +163,7 @@ if _MODAL_AVAILABLE:
             token = os.environ.get("KP_EXEC_TOKEN", "")
             if not token or authorization != f"Bearer {token}":
                 raise HTTPException(status_code=401, detail="unauthorized")
-            request = request_from_json(payload)
+            request = parse(payload)
             return result_to_json(compile_check_remote.remote(request))
 
         return api

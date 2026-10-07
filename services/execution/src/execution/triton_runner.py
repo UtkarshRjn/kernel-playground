@@ -17,6 +17,7 @@ from typing import Any
 
 from .benchmark import summarize
 from .contracts import RunRequest, RunResult, RunStatus
+from .limits import safe_join
 
 # Contract: a Triton submission defines kp_run() (one iteration) and optional kp_setup()
 # (one-time allocation). Both are module-level and parameterless, mirroring the CUDA
@@ -25,7 +26,12 @@ EntryFns = tuple[Callable[[], Any], Callable[[], Any] | None]
 
 
 def load_entry(source: str, path: str) -> EntryFns:
-    """Execute submission source and return (kp_run, kp_setup). Raises if kp_run is absent."""
+    """Execute submission source and return (kp_run, kp_setup). Raises if kp_run is absent.
+
+    The code runs in-process, so it sees this process's full ``os.environ`` and memory.
+    That is only safe because the Modal function attaches no secrets, blocks the network,
+    restricts Modal access and uses a fresh container per input (see modal_app.py).
+    """
     namespace: dict[str, Any] = {}
     exec(compile(source, path, "exec"), namespace)  # noqa: S102 - sandboxed on Modal
     kp_run = namespace.get("kp_run")
@@ -100,8 +106,9 @@ def run_triton(request: RunRequest, workdir: Path) -> RunResult:
     import sys
 
     for f in request.files:
-        (workdir / f.path).parent.mkdir(parents=True, exist_ok=True)
-        (workdir / f.path).write_text(f.content)
+        dest = safe_join(workdir, f.path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(f.content)
     sys.path.insert(0, str(workdir))
 
     try:

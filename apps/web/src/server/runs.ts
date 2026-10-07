@@ -5,7 +5,13 @@ import {
   estimateHoldCredits,
   type KernelSubmission,
 } from "@kp/core";
-import type { ExecutionProvider, RunRequest, RunResult, RunStatus } from "@kp/shared";
+import {
+  type ExecutionProvider,
+  type RunRequest,
+  type RunResult,
+  type RunStatus,
+  truncateOutput,
+} from "@kp/shared";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 
@@ -55,7 +61,10 @@ export async function processRun(params: {
     await prisma.run
       .update({
         where: { id: runId },
-        data: { status: "error", error: err instanceof Error ? err.message : String(err) },
+        data: {
+          status: "error",
+          error: truncateOutput(err instanceof Error ? err.message : String(err)),
+        },
       })
       .catch(() => {});
   }
@@ -99,7 +108,9 @@ async function runTargets(params: {
           where: { runId, gpu: req.gpu },
           data: {
             status: "runtime_error",
-            diagnostics: `Execution service error — ${err instanceof Error ? err.message : String(err)}`,
+            diagnostics: truncateOutput(
+              `Execution service error — ${err instanceof Error ? err.message : String(err)}`,
+            ),
           },
         });
         return;
@@ -113,7 +124,8 @@ async function runTargets(params: {
           status: result.status,
           gpuSeconds: result.gpuSeconds,
           stats: result.stats ? (result.stats as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
-          diagnostics: result.diagnostics,
+          diagnostics:
+            typeof result.diagnostics === "string" ? truncateOutput(result.diagnostics) : null,
         },
       });
     }),
