@@ -18,6 +18,7 @@ import { z } from "zod";
 import { getOrCreateAccountId, PrismaCreditLedger } from "../credit-ledger";
 import { prisma } from "../db";
 import { getRunStatus, processRun, submitRun } from "../runs";
+import { assertSpendAllowsRun } from "../spend-guard";
 import { protectedProcedure, router } from "../trpc";
 
 // Real GPUs when the Modal endpoint is configured; deterministic mock otherwise.
@@ -81,6 +82,7 @@ export const runRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      await assertSpendAllowsRun();
       const accountId = await getOrCreateAccountId(ctx.userId);
       const ledger = new PrismaCreditLedger(prisma, accountId);
       const submission: KernelSubmission = {
