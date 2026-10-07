@@ -9,6 +9,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from .limits import (
+    MAX_FILE_CHARS,
+    MAX_FILES,
+    MAX_TIMED_ITERS,
+    MAX_WARMUP_ITERS,
+    truncate_output,
+    validate_path,
+)
+
 
 class GpuType(StrEnum):
     T4 = "T4"
@@ -42,6 +51,11 @@ class KernelFile:
     path: str
     content: str
 
+    def __post_init__(self) -> None:
+        validate_path(self.path)
+        if len(self.content) > MAX_FILE_CHARS:
+            raise ValueError(f"{self.path} exceeds {MAX_FILE_CHARS} characters")
+
 
 @dataclass(frozen=True)
 class BenchmarkConfig:
@@ -51,10 +65,10 @@ class BenchmarkConfig:
     timeout_sec: int = 60
 
     def __post_init__(self) -> None:
-        if self.warmup_iters < 0:
-            raise ValueError("warmup_iters must be >= 0")
-        if self.timed_iters < 1:
-            raise ValueError("timed_iters must be >= 1")
+        if not (0 <= self.warmup_iters <= MAX_WARMUP_ITERS):
+            raise ValueError(f"warmup_iters must be in [0, {MAX_WARMUP_ITERS}]")
+        if not (1 <= self.timed_iters <= MAX_TIMED_ITERS):
+            raise ValueError(f"timed_iters must be in [1, {MAX_TIMED_ITERS}]")
         if not (1 <= self.timeout_sec <= 300):
             raise ValueError("timeout_sec must be in [1, 300]")
 
@@ -74,6 +88,8 @@ class RunRequest:
     def __post_init__(self) -> None:
         if not self.files:
             raise ValueError("at least one kernel file is required")
+        if len(self.files) > MAX_FILES:
+            raise ValueError(f"at most {MAX_FILES} kernel files are allowed")
         if not self.entry_point:
             raise ValueError("entry_point is required")
 
@@ -109,3 +125,10 @@ class RunResult:
     stdout: str = ""
     stderr: str = ""
     diagnostics: str | None = None
+
+    def __post_init__(self) -> None:
+        # Output comes from untrusted code; cap it so one run can't bloat the wire or the DB.
+        object.__setattr__(self, "stdout", truncate_output(self.stdout))
+        object.__setattr__(self, "stderr", truncate_output(self.stderr))
+        if self.diagnostics is not None:
+            object.__setattr__(self, "diagnostics", truncate_output(self.diagnostics))

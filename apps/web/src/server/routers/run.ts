@@ -10,6 +10,7 @@ import {
   BenchmarkConfig,
   GpuType,
   KernelLanguage,
+  MAX_FILE_CHARS,
   type ExecutionProvider,
   type RunRequest,
 } from "@kp/shared";
@@ -51,7 +52,7 @@ export const runRouter = router({
 
   /** Free, GPU-free compile/syntax check — the "Test" step (synchronous; it's fast). */
   test: protectedProcedure
-    .input(z.object({ language: KernelLanguage, code: z.string().min(1) }))
+    .input(z.object({ language: KernelLanguage, code: z.string().min(1).max(MAX_FILE_CHARS) }))
     .mutation(async ({ input }) => {
       const request: RunRequest = {
         runId: randomUUID(),
@@ -82,7 +83,7 @@ export const runRouter = router({
     .input(
       z.object({
         language: KernelLanguage,
-        code: z.string().min(1),
+        code: z.string().min(1).max(MAX_FILE_CHARS),
         gpus: z.array(GpuType).min(1),
         benchmark: BenchmarkConfig.optional(),
       }),

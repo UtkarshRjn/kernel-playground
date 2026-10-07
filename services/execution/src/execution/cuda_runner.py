@@ -15,6 +15,7 @@ from pathlib import Path
 
 from .benchmark import summarize
 from .contracts import GpuType, RunRequest, RunResult, RunStatus
+from .limits import safe_join
 
 # CUDA compute capability (SM arch) per GPU. Used for nvcc -arch=sm_XX.
 SM_ARCH: dict[GpuType, str] = {
@@ -79,7 +80,7 @@ def _materialize(request: RunRequest, workdir: Path) -> list[str]:
     """Write user .cu sources + the injected benchmark driver; return source filenames."""
     src_names: list[str] = []
     for f in request.files:
-        path = workdir / f.path
+        path = safe_join(workdir, f.path)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f.content)
         if f.path.endswith(".cu"):
@@ -147,6 +148,7 @@ def run_cuda(request: RunRequest, workdir: Path) -> RunResult:
             diagnostics=compile_proc.stderr,
         )
 
+    # The user binary gets only these vars, never the container's environment.
     env = {
         "KP_WARMUP": str(request.benchmark.warmup_iters),
         "KP_ITERS": str(request.benchmark.timed_iters),
