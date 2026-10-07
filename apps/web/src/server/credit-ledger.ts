@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { type CreditLedger, InsufficientCreditsError } from "@kp/core";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { prisma } from "./db";
-import { STARTER_CREDITS } from "./credits-config";
 
 /** Postgres-backed credit ledger (hold/settle in transactions). */
 export class PrismaCreditLedger implements CreditLedger {
@@ -70,16 +69,40 @@ export class PrismaCreditLedger implements CreditLedger {
   }
 }
 
-/** Get (or lazily create) the user's credit account id. */
-export async function getOrCreateAccountId(userId: string): Promise<string> {
+/**
+ * Create the user's credit account with `starterCredits` if it doesn't exist yet.
+ * The starter grant only ever happens on account creation, and `CreditAccount.userId`
+ * is unique, so concurrent callers can't double-grant: the loser gets P2002 and reuses
+ * the winner's account.
+ */
+export async function ensureCreditAccount(userId: string, starterCredits: number): Promise<string> {
   const existing = await prisma.creditAccount.findUnique({ where: { userId } });
   if (existing) return existing.id;
-  const created = await prisma.creditAccount.create({
-    data: {
-      userId,
-      balance: STARTER_CREDITS,
-      txns: { create: { kind: "grant", amount: STARTER_CREDITS } },
-    },
-  });
-  return created.id;
+  try {
+    const created = await prisma.creditAccount.create({
+      data: {
+        userId,
+        balance: starterCredits,
+        ...(starterCredits > 0 && {
+          txns: { create: { kind: "grant", amount: starterCredits } },
+        }),
+      },
+    });
+    return created.id;
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const account = await prisma.creditAccount.findUniqueOrThrow({ where: { userId } });
+      return account.id;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Get (or lazily create) the user's credit account id. The starter grant is decided
+ * at sign-in from the OAuth profile (see auth.ts); this fallback has no profile to
+ * check, so it never grants credits.
+ */
+export async function getOrCreateAccountId(userId: string): Promise<string> {
+  return ensureCreditAccount(userId, 0);
 }
